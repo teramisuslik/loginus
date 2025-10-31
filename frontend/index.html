@@ -649,13 +649,19 @@
             z-index: 1;
         }
         
-        /* Скрытие карточек отключенных методов авторизации */
-        .auth-method-card[data-hidden-by-module="true"],
-        .auth-method-card.hidden-by-module {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
+        /* Отключенные карточки методов авторизации */
+        .auth-method-card.auth-method-disabled,
+        .auth-method-card[data-disabled="true"] {
+            opacity: 0.5 !important;
             pointer-events: none !important;
+            cursor: not-allowed !important;
+            filter: grayscale(50%);
+        }
+        
+        .auth-method-card.auth-method-disabled:hover,
+        .auth-method-card[data-disabled="true"]:hover {
+            transform: none !important;
+            box-shadow: none !important;
         }
 
         .auth-method-card:hover {
@@ -931,9 +937,14 @@
         <div class="auth-right">
             <div class="auth-form">
                 <!-- Auth Header -->
-                <div class="auth-header">
+                <div class="auth-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <i class="fas fa-shield-alt"></i>
-                    Выберите способ входа
+                        <span>Выберите способ входа</span>
+                    </div>
+                    <button id="switchAccountBtn" onclick="switchAccount()" style="display: none; background: transparent; border: 1px solid #667eea; color: #667eea; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: all 0.3s ease;">
+                        <i class="fas fa-exchange-alt"></i> Сменить аккаунт
+                    </button>
                 </div>
 
                 <!-- Method Selection Step -->
@@ -945,7 +956,7 @@
 
                     <div class="auth-methods-grid">
                         <!-- Email -->
-                        <div class="auth-method-card" data-method="EMAIL" id="emailAuthCard" onclick="selectAuthMethod('EMAIL')">
+                        <div class="auth-method-card" data-method="EMAIL" id="emailAuthCard">
                             <div class="method-icon">📧</div>
                             <div class="method-name">Email</div>
                             <div class="method-description">Вход по email и паролю</div>
@@ -953,7 +964,7 @@
 
                         
                         <!-- Telegram Login Widget -->
-                        <div class="auth-method-card" data-method="TELEGRAM_OAUTH" id="telegramAuthCard" onclick="selectAuthMethod('TELEGRAM_OAUTH')">
+                        <div class="auth-method-card" data-method="TELEGRAM_OAUTH" id="telegramAuthCard">
                             <div class="method-icon">🚀</div>
                             <div class="method-name">Telegram OAuth</div>
                             <div class="method-description">Быстрый вход через Telegram</div>
@@ -961,7 +972,7 @@
                         
 
                         <!-- GitHub -->
-                        <div class="auth-method-card" data-method="GITHUB" id="githubAuthCard" onclick="selectAuthMethod('GITHUB')">
+                        <div class="auth-method-card" data-method="GITHUB" id="githubAuthCard">
                             <div class="method-icon">🐙</div>
                             <div class="method-name">GitHub</div>
                             <div class="method-description">Вход через GitHub</div>
@@ -1155,6 +1166,33 @@
             </button>
                     </form>
 
+            </div>
+            
+            <!-- nFA Form -->
+            <div id="nfaForm" class="auth-step">
+                <div class="form-header">
+                    <h2 class="form-title">Многофакторная аутентификация (nFA)</h2>
+                    <p class="form-subtitle">Введите коды со всех выбранных методов защиты</p>
+                </div>
+
+                <div class="security-info">
+                    <h4>
+                        <i class="fas fa-shield-alt"></i>
+                        Безопасность
+                    </h4>
+                    <p>Для защиты вашего аккаунта включена многофакторная аутентификация. Введите коды со всех выбранных методов защиты.</p>
+                </div>
+
+                <div id="nfaMethodsForms" style="margin-bottom: 1.5rem;">
+                    <!-- Методы nFA будут добавлены динамически -->
+                </div>
+
+                <form id="nfaFormElement" onsubmit="handleNFA(event)">
+                    <button type="submit" class="btn btn-primary" id="nfaBtn">
+                        <span id="nfaBtnText">Подтвердить все методы</span>
+                        <div class="loading hidden" id="nfaLoading"></div>
+                    </button>
+                </form>
             </div>
             
                 <!-- Убрана отдельная форма регистрации - только умная регистрация -->
@@ -1396,103 +1434,190 @@
         let authToken = null;
         let pending2FAUserId = null;
         let pending2FAEmail = null;
+        let pendingNFAUserId = null;
+        let pendingNFAMethods = [];
+        let pendingNFAEmail = null;
         let selectedAuthMethod = null;
+        
+        // КРИТИЧНО: Определяем selectAuthMethod СРАЗУ, чтобы она была доступна для inline onclick
+        // Делаем её глобальной ДО того, как HTML парсится с onclick атрибутами
+        window.selectAuthMethod = function selectAuthMethod(method) {
+            console.log('📞 selectAuthMethod called with:', method);
+            selectedAuthMethod = method;
+            
+            // Remove previous selection
+            document.querySelectorAll('.auth-method-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selection to clicked card
+            const selectedCard = document.querySelector(`[data-method="${method}"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+                console.log('✅ Card selected:', selectedCard.id);
+            }
+            
+            // Show method info
+            const methodNames = {
+                'EMAIL': 'Email',
+                'TELEGRAM_OAUTH': 'Telegram OAuth',
+                'GITHUB': 'GitHub'
+            };
+            
+            const methodNameEl = document.getElementById('selectedMethodName');
+            const methodInfoEl = document.getElementById('selectedMethodInfo');
+            
+            if (methodNameEl) {
+                methodNameEl.textContent = methodNames[method] || method;
+            }
+            if (methodInfoEl) {
+                methodInfoEl.style.display = 'block';
+                console.log('✅ Method info shown');
+            } else {
+                console.error('❌ selectedMethodInfo element not found');
+            }
+            
+            console.log('✅ selectAuthMethod completed for:', method);
+        };
 
-        // Скрыть отключенные методы авторизации - определяем функцию заранее
-        async function hideDisabledAuthMethods() {
+        // Отключить некликабельность отключенных методов авторизации - определяем функцию заранее
+        async function disableDisabledAuthMethods() {
             try {
-                console.log('🔍 Checking auth modules status...');
-                // Проверяем статус модулей аутентификации через правильный endpoint
-                const modulesResult = await apiCall('/api/micro-modules', { method: 'GET' });
-                console.log('📊 All modules result:', modulesResult);
+                console.log('🔍 [disableDisabledAuthMethods] Starting...');
                 
-                // Ищем модули auth по имени
-                const emailModule = Array.isArray(modulesResult) ? modulesResult.find(m => m.name === 'email-auth') : null;
-                const githubModule = Array.isArray(modulesResult) ? modulesResult.find(m => m.name === 'github-auth') : null;
-                const telegramModule = Array.isArray(modulesResult) ? modulesResult.find(m => m.name === 'telegram-auth') : null;
-                
-                // Формируем статус в том же формате для совместимости
-                // Если модуль найден - используем его isEnabled, иначе false (модуль отключен если отсутствует)
-                const statusResult = {
-                    email: { enabled: emailModule ? (emailModule.isEnabled === true) : false },
-                    github: { enabled: githubModule ? (githubModule.isEnabled === true) : false },
-                    telegram: { enabled: telegramModule ? (telegramModule.isEnabled === true) : false }
-                };
-                console.log('📊 Auth modules status result:', statusResult);
-                
-                // Скрываем/показываем карточки методов авторизации на основе статуса модулей
                 const emailCard = document.getElementById('emailAuthCard');
                 const githubCard = document.getElementById('githubAuthCard');
                 const telegramCard = document.getElementById('telegramAuthCard');
                 
-                console.log('🔍 Email card element:', emailCard);
+                // Используем правильный endpoint для статуса модулей аутентификации
+                let statusResult;
+                try {
+                    console.log('🌐 Calling /api/micro-modules/auth/status...');
+                    const response = await apiCall('/api/micro-modules/auth/status', { method: 'GET' });
+                    console.log('✅ Successfully got response from /api/micro-modules/auth/status:', JSON.stringify(response));
+                    // Проверяем, что ответ в правильном формате
+                    if (response && typeof response === 'object') {
+                        // Нормализуем формат ответа - может быть {email: {enabled: true}} или {email: true}
+                        statusResult = {
+                            email: typeof response.email === 'object' ? response.email : { enabled: response.email !== false },
+                            github: typeof response.github === 'object' ? response.github : { enabled: response.github !== false },
+                            telegram: typeof response.telegram === 'object' ? response.telegram : { enabled: response.telegram !== false }
+                        };
+                        console.log('✅ Response format normalized:', JSON.stringify(statusResult));
+                    } else {
+                        console.error('❌ Invalid response format:', response);
+                        throw new Error('Invalid response format');
+                    }
+                } catch (e) {
+                    console.error('❌ [disableDisabledAuthMethods] Error getting auth status from /api/micro-modules/auth/status:', e);
+                    console.error('❌ [disableDisabledAuthMethods] Error details:', e.message);
+                    console.warn('⚠️ [disableDisabledAuthMethods] Failed to get status, using default: ALL ENABLED');
+                    // При ошибке считаем что все включено
+                    statusResult = {
+                        email: { enabled: true },
+                        github: { enabled: true },
+                        telegram: { enabled: true }
+                    };
+                    console.log('✅ [disableDisabledAuthMethods] Using default: all enabled due to error');
+                }
+                
+                // Используем уже найденные карточки или находим заново
+                const emailCardEl = document.getElementById('emailAuthCard');
+                const githubCardEl = document.getElementById('githubAuthCard');
+                const telegramCardEl = document.getElementById('telegramAuthCard');
+                
+                console.log('🔍 Email card element:', emailCardEl);
                 console.log('🔍 Email enabled status:', statusResult?.email?.enabled);
                 
-                if (emailCard) {
-                    const emailEnabled = statusResult?.email?.enabled;
-                    console.log('🔍 Email enabled value:', emailEnabled, 'Type:', typeof emailEnabled, 'Is false?', emailEnabled === false);
+                // Функция для отключения карточки
+                function disableCard(cardEl, methodName) {
+                    if (!cardEl) {
+                        console.warn(`⚠️ [disableCard] Card element not found for ${methodName}`);
+                        return;
+                    }
+                    console.log(`❌ [disableCard] ${methodName} auth is disabled, making card non-clickable`);
+                    console.log(`❌ [disableCard] Card before:`, {
+                        id: cardEl.id,
+                        hasMethod: cardEl.hasAttribute('data-method'),
+                        hasDisabled: cardEl.hasAttribute('data-disabled'),
+                        hasClass: cardEl.classList.contains('auth-method-disabled')
+                    });
                     
+                    cardEl.style.setProperty('opacity', '0.5', 'important');
+                    cardEl.style.setProperty('pointer-events', 'none', 'important');
+                    cardEl.style.setProperty('cursor', 'not-allowed', 'important');
+                    cardEl.classList.add('auth-method-disabled');
+                    cardEl.setAttribute('data-disabled', 'true');
+                    cardEl.removeAttribute('data-method'); // Удаляем обработчик клика
+                    
+                    // Добавляем визуальный индикатор "отключено"
+                    let disabledBadge = cardEl.querySelector('.auth-disabled-badge');
+                    if (!disabledBadge) {
+                        disabledBadge = document.createElement('div');
+                        disabledBadge.className = 'auth-disabled-badge';
+                        disabledBadge.textContent = 'Отключено';
+                        disabledBadge.style.cssText = 'position: absolute; top: 8px; right: 8px; background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; z-index: 10;';
+                        cardEl.appendChild(disabledBadge);
+                        console.log(`✅ [disableCard] Added disabled badge to ${methodName} card`);
+                    }
+                    
+                    console.log(`✅ [disableCard] ${methodName} card disabled successfully`);
+                    console.log(`✅ [disableCard] Card after:`, {
+                        id: cardEl.id,
+                        opacity: cardEl.style.opacity,
+                        pointerEvents: cardEl.style.pointerEvents,
+                        cursor: cardEl.style.cursor,
+                        hasMethod: cardEl.hasAttribute('data-method'),
+                        hasDisabled: cardEl.hasAttribute('data-disabled'),
+                        hasClass: cardEl.classList.contains('auth-method-disabled'),
+                        hasBadge: !!cardEl.querySelector('.auth-disabled-badge')
+                    });
+                }
+                
+                // Функция для включения карточки
+                function enableCard(cardEl, methodName, methodValue) {
+                    if (!cardEl) return;
+                    console.log(`✅ ${methodName} auth is enabled, making card clickable`);
+                    cardEl.style.setProperty('opacity', '1', 'important');
+                    cardEl.style.setProperty('pointer-events', 'auto', 'important');
+                    cardEl.style.setProperty('cursor', 'pointer', 'important');
+                    cardEl.classList.remove('auth-method-disabled');
+                    cardEl.removeAttribute('data-disabled');
+                    cardEl.setAttribute('data-method', methodValue);
+                    
+                    // Удаляем индикатор "отключено"
+                    const disabledBadge = cardEl.querySelector('.auth-disabled-badge');
+                    if (disabledBadge) {
+                        disabledBadge.remove();
+                    }
+                }
+                
+                if (emailCardEl) {
+                    const emailEnabled = statusResult?.email?.enabled;
                     if (emailEnabled === false) {
-                        console.log('❌ Email auth is disabled, hiding email card');
-                        emailCard.style.setProperty('display', 'none', 'important');
-                        emailCard.style.setProperty('visibility', 'hidden', 'important');
-                        emailCard.style.setProperty('opacity', '0', 'important');
-                        emailCard.style.setProperty('pointer-events', 'none', 'important');
-                        emailCard.removeAttribute('onclick');
-                        emailCard.setAttribute('data-hidden-by-module', 'true');
-                        emailCard.classList.add('hidden-by-module');
-                        
-                        // Дополнительная проверка через секунду
-                        setTimeout(() => {
-                            if (emailCard && emailCard.style.display !== 'none') {
-                                console.error('⚠️ Email card still visible! Forcing hide...');
-                                emailCard.style.setProperty('display', 'none', 'important');
-                                emailCard.style.setProperty('visibility', 'hidden', 'important');
-                                emailCard.style.setProperty('opacity', '0', 'important');
-                                emailCard.style.setProperty('pointer-events', 'none', 'important');
-                            }
-                        }, 1000);
+                        disableCard(emailCardEl, 'Email');
                     } else {
-                        console.log('✅ Email auth is enabled, showing email card');
-                        emailCard.style.removeProperty('display');
-                        emailCard.style.removeProperty('visibility');
-                        emailCard.style.removeProperty('opacity');
-                        emailCard.style.removeProperty('pointer-events');
-                        emailCard.setAttribute('onclick', "selectAuthMethod('EMAIL')");
-                        emailCard.removeAttribute('data-hidden-by-module');
-                        emailCard.classList.remove('hidden-by-module');
+                        enableCard(emailCardEl, 'Email', 'EMAIL');
                     }
                 } else {
                     console.warn('⚠️ Email card element not found!');
                 }
                 
-                if (githubCard) {
-                    if (statusResult?.github?.enabled === false) {
-                        githubCard.style.cssText = 'display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;';
-                        githubCard.removeAttribute('onclick');
-                        githubCard.setAttribute('data-hidden-by-module', 'true');
+                if (githubCardEl) {
+                    const githubEnabled = statusResult?.github?.enabled;
+                    if (githubEnabled === false) {
+                        disableCard(githubCardEl, 'GitHub');
                     } else {
-                        githubCard.style.display = '';
-                        githubCard.style.visibility = '';
-                        githubCard.style.opacity = '';
-                        githubCard.style.pointerEvents = '';
-                        githubCard.setAttribute('onclick', "selectAuthMethod('GITHUB')");
-                        githubCard.removeAttribute('data-hidden-by-module');
+                        enableCard(githubCardEl, 'GitHub', 'GITHUB');
                     }
                 }
                 
-                if (telegramCard) {
-                    if (statusResult?.telegram?.enabled === false) {
-                        telegramCard.style.cssText = 'display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;';
-                        telegramCard.removeAttribute('onclick');
-                        telegramCard.setAttribute('data-hidden-by-module', 'true');
+                if (telegramCardEl) {
+                    const telegramEnabled = statusResult?.telegram?.enabled;
+                    if (telegramEnabled === false) {
+                        disableCard(telegramCardEl, 'Telegram');
                     } else {
-                        telegramCard.style.display = '';
-                        telegramCard.style.visibility = '';
-                        telegramCard.style.opacity = '';
-                        telegramCard.style.pointerEvents = '';
-                        telegramCard.setAttribute('onclick', "selectAuthMethod('TELEGRAM_OAUTH')");
-                        telegramCard.removeAttribute('data-hidden-by-module');
+                        enableCard(telegramCardEl, 'Telegram', 'TELEGRAM_OAUTH');
                     }
                 }
                 
@@ -1531,17 +1656,42 @@
         }
         
 
-        // Вызываем функцию немедленно после определения
+        // Вызываем функцию один раз после загрузки DOM
+        // ВАЖНО: Вызываем только один раз, чтобы карточки не обрабатывались многократно
+        let disableDisabledAuthMethodsCalled = false;
+        function callDisableDisabledAuthMethodsOnce() {
+            if (disableDisabledAuthMethodsCalled) {
+                console.log('⚠️ disableDisabledAuthMethods already called, skipping (use forceRefresh=true to override)');
+                return;
+            }
+            disableDisabledAuthMethodsCalled = true;
+            console.log('🔄 [callDisableDisabledAuthMethodsOnce] Calling disableDisabledAuthMethods...');
+            disableDisabledAuthMethods().catch(e => console.error('Error in disableDisabledAuthMethods:', e));
+        }
+        
+        // Публичная функция для принудительного обновления (для отладки)
+        window.forceRefreshAuthMethods = function() {
+            console.log('🔄 [forceRefreshAuthMethods] Forcing refresh of auth methods status...');
+            disableDisabledAuthMethodsCalled = false;
+            callDisableDisabledAuthMethodsOnce();
+        };
+        
+        // Вызываем сразу и после загрузки DOM
+        console.log('📋 [Script init] Setting up disableDisabledAuthMethods calls...');
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(hideDisabledAuthMethods, 300);
-                setTimeout(hideDisabledAuthMethods, 800);
-                setTimeout(hideDisabledAuthMethods, 1500);
+                console.log('📋 [DOMContentLoaded] DOM ready, scheduling disableDisabledAuthMethods...');
+                setTimeout(() => {
+                    console.log('📋 [setTimeout] Executing disableDisabledAuthMethods...');
+                    callDisableDisabledAuthMethodsOnce();
+                }, 500);
             });
         } else {
-            setTimeout(hideDisabledAuthMethods, 300);
-            setTimeout(hideDisabledAuthMethods, 800);
-            setTimeout(hideDisabledAuthMethods, 1500);
+            console.log('📋 [Script init] DOM already ready, scheduling disableDisabledAuthMethods...');
+            setTimeout(() => {
+                console.log('📋 [setTimeout] Executing disableDisabledAuthMethods...');
+                callDisableDisabledAuthMethodsOnce();
+            }, 500);
         }
 
         // Show method selection step
@@ -1550,27 +1700,45 @@
             document.querySelectorAll('.auth-step').forEach(step => step.classList.remove('active'));
             document.getElementById('methodStep').classList.add('active');
             // Скрываем отключенные методы авторизации - вызываем несколько раз с задержками
-            console.log('🔵 Calling hideDisabledAuthMethods');
-            hideDisabledAuthMethods().catch(e => console.error('Error:', e));
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 200);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 500);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 1000);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 2000);
+            console.log('🔵 Calling disableDisabledAuthMethods');
+            // Убрано множественное вызов - вызываем один раз где нужно
+            callDisableDisabledAuthMethodsOnce();
         }
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
             // Привязываем обработчики событий для кнопок авторизации
+            // ВАЖНО: Используем addEventListener вместо inline onclick для надежности
             const authMethodCards = document.querySelectorAll('.auth-method-card');
             authMethodCards.forEach(card => {
-                // Удаляем старые обработчики (если есть)
-                card.removeEventListener('click', handleAuthMethodClick);
-                // Добавляем новый обработчик
-                card.addEventListener('click', handleAuthMethodClick);
+                // Дополнительно: убеждаемся что карточка кликабельна
+                card.style.cursor = 'pointer';
+                card.style.pointerEvents = 'auto';
+                
+                // Добавляем обработчик через addEventListener - это надежнее чем inline onclick
+                card.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const method = this.getAttribute('data-method');
+                    console.log('🖱️ Card clicked via addEventListener, method:', method, 'Card ID:', this.id);
+                    if (method) {
+                        if (typeof window.selectAuthMethod === 'function') {
+                            window.selectAuthMethod(method);
+                        } else {
+                            console.error('❌ window.selectAuthMethod not available, type:', typeof window.selectAuthMethod);
+                        }
+                    } else {
+                        console.error('❌ No method attribute found on card:', this.id);
+                    }
+                }, true); // Используем capture для надежности
+                
                 // Также добавляем обработчик через touchstart для мобильных устройств
                 card.addEventListener('touchstart', function(e) {
                     e.preventDefault();
-                    handleAuthMethodClick(e);
+                    const method = this.getAttribute('data-method');
+                    if (method && typeof window.selectAuthMethod === 'function') {
+                        window.selectAuthMethod(method);
+                    }
                 }, { passive: false });
             });
             
@@ -1607,6 +1775,81 @@
                 console.log('🔗 Реферальный код сохранен: ' + referralCodeFromUrl);
             }
             
+            // Check if nFA is required from URL parameter (for GitHub/Telegram OAuth)
+            // Используем флаг, чтобы избежать повторной отправки при перезагрузке страницы
+            const nfaParam = urlParams.get('nfa');
+            const nfaCodesSent = sessionStorage.getItem('nfaCodesSent');
+            console.log('🔍 [DOMContentLoaded] nFA check:', { nfaParam, nfaCodesSent, condition: nfaParam === 'true' && !nfaCodesSent });
+            
+            if (nfaParam === 'true' && !nfaCodesSent) {
+                const nfaUserId = urlParams.get('userId');
+                const nfaMethodsStr = urlParams.get('methods');
+                console.log('🔍 [DOMContentLoaded] nFA params:', { nfaUserId, nfaMethodsStr });
+                
+                if (nfaUserId && nfaMethodsStr) {
+                    try {
+                        const nfaMethods = JSON.parse(decodeURIComponent(nfaMethodsStr));
+                        console.log('✅ [DOMContentLoaded] Parsed nFA methods:', nfaMethods);
+                        pendingNFAUserId = nfaUserId;
+                        pendingNFAMethods = nfaMethods;
+                        // Проверяем, не отправлялись ли уже коды для этого пользователя
+                        const codesSentKey = `nfaCodesSent_${nfaUserId}`;
+                        const codesAlreadySent = sessionStorage.getItem(codesSentKey);
+                        console.log('🔍 [DOMContentLoaded] Codes sent check:', { codesSentKey, codesAlreadySent });
+                        
+                        if (!codesAlreadySent) {
+                            console.log('📤 [DOMContentLoaded] Sending nFA codes for userId:', nfaUserId);
+                            console.log('📤 [DOMContentLoaded] About to call sendNFACodes with userId:', nfaUserId);
+                            // Помечаем, что коды уже отправлены, чтобы избежать дублирования
+                            sessionStorage.setItem(codesSentKey, 'true');
+                            sessionStorage.setItem('nfaCodesSent', 'true');
+                            // Send nFA codes
+                            console.log('📤 [DOMContentLoaded] Calling sendNFACodes now...');
+                            sendNFACodes(nfaUserId).then((result) => {
+                                console.log('✅ [DOMContentLoaded] nFA codes sent successfully, result:', result);
+                                // Show nFA form
+                                showNFAForm(nfaMethods);
+                                showMessage('Коды отправлены на все выбранные методы защиты. Введите их для завершения входа.', 'info');
+                            }).catch(err => {
+                                console.error('❌ [DOMContentLoaded] Error sending nFA codes:', err);
+                                console.error('❌ [DOMContentLoaded] Error details:', err);
+                                // Убираем флаг при ошибке, чтобы можно было повторить
+                                sessionStorage.removeItem(codesSentKey);
+                                sessionStorage.removeItem('nfaCodesSent');
+                                // ПОКАЗЫВАЕМ ФОРМУ ДАЖЕ ПРИ ОШИБКЕ - возможно коды уже отправлены с бэкенда
+                                showNFAForm(nfaMethods);
+                                showMessage('Ошибка отправки кодов nFA: ' + (err?.message || 'Unknown error') + '. Попробуйте ввести коды, если они уже были отправлены.', 'error');
+                            });
+                        } else {
+                            console.log('ℹ️ [DOMContentLoaded] Codes already sent, showing form only');
+                            // Коды уже отправлены, просто показываем форму
+                            showNFAForm(nfaMethods);
+                            showMessage('Введите коды для завершения входа.', 'info');
+                        }
+                        return;
+                    } catch (e) {
+                        console.error('❌ [DOMContentLoaded] Error parsing nFA parameters:', e);
+                        sessionStorage.removeItem('nfaCodesSent');
+                    }
+                } else {
+                    console.error('❌ [DOMContentLoaded] Missing nFA parameters:', { nfaUserId, nfaMethodsStr });
+                }
+            } else if (nfaParam === 'true') {
+                // Если коды уже отправлены, просто показываем форму
+                const nfaUserId = urlParams.get('userId');
+                const nfaMethodsStr = urlParams.get('methods');
+                if (nfaUserId && nfaMethodsStr) {
+                    try {
+                        const nfaMethods = JSON.parse(decodeURIComponent(nfaMethodsStr));
+                        pendingNFAUserId = nfaUserId;
+                        pendingNFAMethods = nfaMethods;
+                        showNFAForm(nfaMethods);
+                    } catch (e) {
+                        console.error('Error parsing nFA parameters:', e);
+                    }
+                }
+            }
+            
             // Check if 2FA is required from URL parameter
             if (urlParams.get('require2fa') === 'true') {
                 // Show 2FA form directly
@@ -1631,6 +1874,33 @@
             }
 
             // Check if user is already logged in
+            // ВАЖНО: Проверяем токен в URL ПЕРВЫМ делом (после nFA и других спец. случаев)
+            const urlParamsCheck = new URLSearchParams(window.location.search);
+            const nfaParamCheck = urlParamsCheck.get('nfa');
+            const urlTokenFromParams = urlParamsCheck.get('token');
+            
+            // Если токен в URL - это значит мы на index.html по ошибке, нужно редиректить на dashboard
+            if (urlTokenFromParams && nfaParamCheck !== 'true') {
+                console.log('🔑 Token found in URL params on index.html - redirecting to dashboard');
+                localStorage.setItem('authToken', urlTokenFromParams);
+                localStorage.setItem('accessToken', urlTokenFromParams);
+                const urlRefreshToken = urlParamsCheck.get('refreshToken');
+                if (urlRefreshToken) {
+                    localStorage.setItem('refreshToken', urlRefreshToken);
+                }
+                // Удаляем токен из URL и редиректим на dashboard
+                const isSuperAdminCheck = urlParamsCheck.get('superAdmin') === 'true';
+                const redirectTarget = isSuperAdminCheck ? 'test-micro-modules.html' : 'dashboard.html';
+                console.log('🔄 Redirecting from index.html to:', redirectTarget);
+                window.location.replace(redirectTarget);
+                return;
+            }
+            
+            if (nfaParamCheck === 'true') {
+                console.log('🔍 nFA in progress, skipping token check to avoid redirect loop');
+                // Show method selection by default
+                showMethodStep().catch(e => console.error('Error in showMethodStep:', e));
+            } else {
             authToken = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
             if (authToken) {
                 console.log('🔑 Found token, verifying...');
@@ -1639,18 +1909,18 @@
             } else {
                 console.log('❌ No token found, showing method selection');
                 // Show method selection by default
-                showMethodStep().catch(e => console.error('Error in showMethodStep:', e));
+                    showMethodStep().catch(e => console.error('Error in showMethodStep:', e));
+            }
             }
         });
 
-        // Дополнительный вызов hideDisabledAuthMethods после полной загрузки страницы
+        // Дополнительный вызов disableDisabledAuthMethods после полной загрузки страницы
+        // ВАЖНО: Вызываем только один раз, чтобы не обрабатывать карточки многократно
         window.addEventListener('load', function() {
-            console.log('🟡 Window loaded, calling hideDisabledAuthMethods');
-            // Вызываем с несколькими задержками для надежности
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 100);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 500);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 1000);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 2000);
+            console.log('🟡 Window loaded, calling disableDisabledAuthMethods');
+            callDisableDisabledAuthMethodsOnce();
+            // Проверяем, нужно ли показать кнопку "Сменить аккаунт"
+            checkShowSwitchAccountButton();
         });
 
         // Show method selection step
@@ -1659,12 +1929,9 @@
             document.querySelectorAll('.auth-step').forEach(step => step.classList.remove('active'));
             document.getElementById('methodStep').classList.add('active');
             // Скрываем отключенные методы авторизации - вызываем несколько раз с задержками
-            console.log('🔵 Calling hideDisabledAuthMethods');
-            hideDisabledAuthMethods().catch(e => console.error('Error:', e));
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 200);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 500);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 1000);
-            setTimeout(() => hideDisabledAuthMethods().catch(e => console.error('Error:', e)), 2000);
+            console.log('🔵 Calling disableDisabledAuthMethods');
+            // Убрано множественное вызов - вызываем один раз где нужно
+            callDisableDisabledAuthMethodsOnce();
         }
 
         // Handle auth method card click
@@ -1672,37 +1939,97 @@
             event.preventDefault();
             event.stopPropagation();
             const card = event.currentTarget;
+            
+            // Проверяем, не отключена ли карточка
+            if (card.hasAttribute('data-disabled') || card.classList.contains('auth-method-disabled')) {
+                console.log('⚠️ Auth method card is disabled, ignoring click');
+                return;
+            }
+            
             const method = card.getAttribute('data-method');
-            console.log('🖱️ Auth method card clicked:', method);
+            console.log('🖱️ Auth method card clicked:', method, 'Card:', card.id);
             if (method) {
-                selectAuthMethod(method);
+                console.log('✅ Calling selectAuthMethod with method:', method);
+                try {
+                    // Используем window.selectAuthMethod напрямую
+                    if (typeof window.selectAuthMethod === 'function') {
+                        window.selectAuthMethod(method);
+                    } else {
+                        console.error('❌ window.selectAuthMethod not available, type:', typeof window.selectAuthMethod);
+                        console.error('❌ Available window keys:', Object.keys(window).filter(k => k.includes('select') || k.includes('Auth')));
+                    }
+                } catch (e) {
+                    console.error('❌ Error calling selectAuthMethod:', e);
+                }
+            } else {
+                console.error('❌ No method attribute found on card:', card);
             }
         }
 
         // Select authentication method
-        function selectAuthMethod(method) {
-            selectedAuthMethod = method;
+        // Функция УЖЕ определена выше в начале скрипта (строка ~1441)
+        // Не определяем её повторно - используем существующую window.selectAuthMethod
+        
+        // Функция для смены аккаунта - очищает все данные и позволяет войти заново
+        function switchAccount() {
+            if (confirm('Вы уверены, что хотите выйти и войти с другого аккаунта? Все текущие данные сессии будут удалены.')) {
+                console.log('🔄 Switching account - clearing all session data...');
             
-            // Remove previous selection
-            document.querySelectorAll('.auth-method-card').forEach(card => {
-                card.classList.remove('selected');
-            });
-            
-            // Add selection to clicked card
-            const selectedCard = document.querySelector(`[data-method="${method}"]`);
-            if (selectedCard) {
-                selectedCard.classList.add('selected');
+                // Очищаем все токены и данные
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('userData');
+                
+                // Очищаем все данные sessionStorage
+                sessionStorage.clear();
+                
+                // Очищаем cookies (все cookies для текущего домена)
+                document.cookie.split(";").forEach(function(c) { 
+                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                });
+                
+                // Очищаем URL параметры
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                // Сохраняем флаг принудительной смены аккаунта
+                sessionStorage.setItem('forceSwitchAccount', 'true');
+                
+                // Показываем сообщение
+                showMessage('Сессия очищена. Теперь при выборе GitHub или Telegram будет показан экран выбора аккаунта.', 'info');
+                
+                // Скрываем кнопку смены аккаунта
+                const switchBtn = document.getElementById('switchAccountBtn');
+                if (switchBtn) {
+                    switchBtn.style.display = 'none';
+                }
+                
+                // Перезагружаем страницу через небольшую задержку
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             }
+        }
+        
+        // Делаем функцию глобальной
+        window.switchAccount = switchAccount;
+        
+        // Проверяем, нужно ли показать кнопку "Сменить аккаунт"
+        function checkShowSwitchAccountButton() {
+            const switchBtn = document.getElementById('switchAccountBtn');
+            if (!switchBtn) return;
             
-            // Show method info
-            const methodNames = {
-                'EMAIL': 'Email',
-                'TELEGRAM_OAUTH': 'Telegram OAuth',
-                'GITHUB': 'GitHub'
-            };
+            // Показываем кнопку, если есть токены в localStorage или URL
+            const hasToken = localStorage.getItem('authToken') || 
+                           localStorage.getItem('accessToken') || 
+                           new URLSearchParams(window.location.search).get('token') ||
+                           new URLSearchParams(window.location.search).get('accessToken');
             
-            document.getElementById('selectedMethodName').textContent = methodNames[method];
-            document.getElementById('selectedMethodInfo').style.display = 'block';
+            if (hasToken) {
+                switchBtn.style.display = 'block';
+            } else {
+                switchBtn.style.display = 'none';
+            }
         }
 
         // Proceed with selected method
@@ -1717,23 +2044,29 @@
                     showEmailStep();
                     break;
                 case 'TELEGRAM_OAUTH':
-                    window.location.href = 'telegram-login.html';
+                    // Проверяем, нужно ли принудительно показать выбор аккаунта
+                    const forceTelegram = sessionStorage.getItem('forceSwitchAccount') === 'true';
+                    const telegramUrl = forceTelegram 
+                        ? 'telegram-login.html?forceLogin=true'
+                        : 'telegram-login.html';
+                    if (forceTelegram) {
+                        sessionStorage.removeItem('forceSwitchAccount');
+                        console.log('🔵 [proceedWithSelectedMethod] Redirecting to Telegram login with forceLogin=true (switching account)');
+                    } else {
+                        console.log('🔵 [proceedWithSelectedMethod] Redirecting to Telegram login (normal flow)');
+                    }
+                    window.location.href = telegramUrl;
                     break;
                 case 'GITHUB':
-                    // Request GitHub OAuth URL from backend and redirect
-                    (async () => {
-                        try {
-                            const resp = await apiCall('/api/auth/multi/oauth/github/url', { method: 'GET' });
-                            if (resp && resp.url) {
-                                window.location.href = resp.url;
-                            } else {
-                                showOAuthStep();
-                            }
-                        } catch (e) {
-                            console.error('GitHub OAuth URL error:', e);
-                            showOAuthStep();
-                        }
-                    })();
+                    // Перенаправляем на страницу github-login.html, откуда можно выбрать аккаунт
+                    console.log('🔵 [proceedWithSelectedMethod] GitHub selected, redirecting to github-login.html...');
+                    const forceLoginGitHub = sessionStorage.getItem('forceSwitchAccount') === 'true';
+                    if (forceLoginGitHub) {
+                        sessionStorage.removeItem('forceSwitchAccount');
+                        window.location.href = 'github-login.html?forceLogin=true';
+                    } else {
+                        window.location.href = 'github-login.html';
+                    }
                     break;
                 default:
                     showMessage('Выбранный метод не поддерживается', 'error');
@@ -1775,7 +2108,7 @@
             document.getElementById('selectedMethodInfo').style.display = 'none';
             
             // Скрываем отключенные методы авторизации
-            hideDisabledAuthMethods().catch(e => console.error('Error:', e));
+            callDisableDisabledAuthMethodsOnce();
         }
 
         // Switch between login and register modes (упрощено - только умная регистрация)
@@ -2019,7 +2352,23 @@
                     body: JSON.stringify({ email, password })
                 });
 
-                if (response.requires2FA) {
+                if (response.requiresNFA) {
+                    // Save userId and methods for nFA completion
+                    pendingNFAUserId = response.userId;
+                    pendingNFAMethods = response.methods || [];
+                    pendingNFAEmail = email;
+                    console.log('📋 [EMAIL Login] nFA required, methods from response:', response.methods);
+                    console.log('📋 [EMAIL Login] pendingNFAMethods:', pendingNFAMethods);
+                    // Send nFA codes to all selected methods (only once)
+                    if (!sessionStorage.getItem(`nfaCodesSent_${response.userId}`)) {
+                        sessionStorage.setItem(`nfaCodesSent_${response.userId}`, 'true');
+                        await sendNFACodes(response.userId);
+                    }
+                    // Show nFA form
+                    console.log('📋 [EMAIL Login] Calling showNFAForm with methods:', pendingNFAMethods);
+                    showNFAForm(pendingNFAMethods);
+                    showMessage('Коды отправлены на все выбранные методы защиты. Введите их для завершения входа.', 'info');
+                } else if (response.requires2FA) {
                     // Save userId and email for 2FA completion
                     pending2FAUserId = response.userId;
                     pending2FAEmail = email;
@@ -2078,6 +2427,230 @@
             } catch (error) {
                 console.error('Error sending 2FA code:', error);
                 showMessage('Ошибка отправки кода: ' + error.message, 'error');
+            }
+        }
+
+        // Send nFA codes to all selected methods
+        // Разрешаем повторные запросы кодов - пользователь должен иметь возможность запросить коды повторно
+        // Используем только минимальный интервал между запросами (5 секунд) для защиты от спама
+        let lastSendTime = 0;
+        const MIN_SEND_INTERVAL = 5000; // Минимум 5 секунд между запросами
+        
+        async function sendNFACodes(userId) {
+            const now = Date.now();
+            // Проверяем только минимальный интервал между запросами (5 секунд), но не блокируем полностью
+            if (now - lastSendTime < MIN_SEND_INTERVAL) {
+                const waitTime = Math.ceil((MIN_SEND_INTERVAL - (now - lastSendTime)) / 1000);
+                console.log(`⏳ Последний запрос был ${waitTime} сек назад, разрешаем повторный запрос (без задержки)`);
+            }
+            
+            lastSendTime = now;
+            console.log('🚨 ФРОНТЕНД v' + VERSION + ': ВЫЗВАНА ФУНКЦИЯ sendNFACodes (nFA)');
+            console.log('👤 UserId:', userId);
+            console.log('🌐 API_BASE_URL:', window.API_BASE_URL);
+            console.log('🔑 authToken:', authToken ? 'present' : 'not present');
+            
+            try {
+                const url = `${window.API_BASE_URL}/api/auth/nfa/send-codes/public`;
+                const body = JSON.stringify({ userId });
+                console.log('📤 Sending POST request to:', url);
+                console.log('📤 Request body:', body);
+                
+                const response = await apiCall('/api/auth/nfa/send-codes/public', {
+                    method: 'POST',
+                    body: body
+                });
+                console.log('✅ nFA codes sent, response:', response);
+                return response;
+            } catch (error) {
+                console.error('❌ Error sending nFA codes:', error);
+                console.error('❌ Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name
+                });
+                showMessage('Ошибка отправки кодов nFA: ' + error.message, 'error');
+                throw error;
+            }
+        }
+
+        // Show nFA form with code inputs for each method
+        function showNFAForm(methods) {
+            console.log('📋 Showing nFA form for methods:', methods);
+            document.querySelectorAll('.auth-step').forEach(step => step.classList.remove('active'));
+            document.getElementById('nfaForm').classList.add('active');
+            
+            const methodsFormsContainer = document.getElementById('nfaMethodsForms');
+            if (!methodsFormsContainer) return;
+            
+            const methodTitles = {
+                EMAIL: 'Email',
+                PHONE_TELEGRAM: 'Telegram',
+                GITHUB: 'GitHub'
+            };
+            
+            const methodIcons = {
+                EMAIL: 'fas fa-envelope',
+                PHONE_TELEGRAM: 'fab fa-telegram',
+                GITHUB: 'fab fa-github'
+            };
+            
+            // Создаем поля для каждого метода
+            methodsFormsContainer.innerHTML = methods.map((method, index) => `
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label class="form-label">
+                        <i class="${methodIcons[method] || 'fas fa-shield-alt'}"></i>
+                        Код с ${methodTitles[method] || method}
+                    </label>
+                    <div class="otp-inputs">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="0" maxlength="1" oninput="moveToNextNFA(this, '${method}', 0)">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="1" maxlength="1" oninput="moveToNextNFA(this, '${method}', 1)">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="2" maxlength="1" oninput="moveToNextNFA(this, '${method}', 2)">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="3" maxlength="1" oninput="moveToNextNFA(this, '${method}', 3)">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="4" maxlength="1" oninput="moveToNextNFA(this, '${method}', 4)">
+                        <input type="text" class="otp-input nfa-code-input" data-method="${method}" data-index="5" maxlength="1" oninput="moveToNextNFA(this, '${method}', 5)">
+                    </div>
+                </div>
+            `).join('');
+            
+            // Фокусируемся на первый input первого метода
+            const firstInput = methodsFormsContainer.querySelector('.otp-input');
+            if (firstInput) {
+                setTimeout(() => firstInput.focus(), 100);
+            }
+        }
+
+        // Move to next input in nFA form
+        function moveToNextNFA(input, method, currentIndex) {
+            const inputs = Array.from(document.querySelectorAll(`.nfa-code-input[data-method="${method}"]`));
+            if (input.value && currentIndex < inputs.length - 1) {
+                inputs[currentIndex + 1].focus();
+            }
+        }
+
+        // Handle nFA codes submission
+        async function handleNFA(event) {
+            event.preventDefault();
+            
+            if (!pendingNFAUserId) {
+                showMessage('Ошибка: ID пользователя не найден', 'error');
+                return;
+            }
+            
+            // Собираем коды для всех методов
+            const methodCodes = {};
+            pendingNFAMethods.forEach(method => {
+                const inputs = Array.from(document.querySelectorAll(`.nfa-code-input[data-method="${method}"]`));
+                const code = inputs.map(input => input.value).join('');
+                if (code.length === 6) {
+                    methodCodes[method] = code;
+                }
+            });
+            
+            // Проверяем, что все методы имеют коды
+            if (Object.keys(methodCodes).length !== pendingNFAMethods.length) {
+                showMessage('Введите коды для всех методов защиты', 'error');
+                return;
+            }
+            
+            // Show loading
+            showLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
+            
+            try {
+                // Проверяем каждый метод
+                for (const method of pendingNFAMethods) {
+                    const code = methodCodes[method];
+                    if (!code) continue;
+                    
+                    const response = await apiCall('/api/auth/nfa/verify-method/public', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            userId: pendingNFAUserId,
+                            method: method,
+                            code: code
+                        })
+                    });
+                    
+                    if (!response.success) {
+                        showMessage(`Неверный код для метода ${method}`, 'error');
+                        hideLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
+                        return;
+                    }
+                }
+                
+                // Все коды верны - завершаем вход
+                const loginResponse = await apiCall('/api/auth/nfa/complete', {
+                    method: 'POST',
+                    body: JSON.stringify({ userId: pendingNFAUserId })
+                });
+                
+                // nFA successful
+                authToken = loginResponse.accessToken;
+                console.log('✅ nFA completed, saving token:', authToken?.substring(0, 20) + '...');
+                localStorage.setItem('authToken', authToken);
+                
+                if (loginResponse.refreshToken) {
+                    localStorage.setItem('refreshToken', loginResponse.refreshToken);
+                }
+                
+                // Сохраняем данные пользователя для dashboard
+                if (loginResponse.user) {
+                    localStorage.setItem('userData', JSON.stringify(loginResponse.user));
+                    console.log('✅ User data saved:', loginResponse.user);
+                }
+                
+                // Clear nFA variables
+                pendingNFAUserId = null;
+                pendingNFAMethods = [];
+                pendingNFAEmail = null;
+                
+                // Очищаем параметры nFA из URL
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+                
+                showMessage('Многофакторная аутентификация пройдена!', 'success');
+                
+                // Redirect based on role - используем прямой редирект на dashboard с токеном в URL
+                // чтобы гарантировать, что токен будет доступен (как при OAuth callback)
+                setTimeout(() => {
+                    console.log('🔄 Redirecting after nFA, user:', loginResponse.user);
+                    console.log('🔄 User roles:', loginResponse.user?.roles);
+                    
+                    // Определяем роль пользователя
+                    const roles = loginResponse.user?.roles || [];
+                    const isSuperAdmin = roles.some(function(r) {
+                        if (typeof r === 'string') {
+                            return r === 'super_admin';
+                        }
+                        if (r && typeof r === 'object' && r.name) {
+                            return r.name === 'super_admin';
+                        }
+                        return false;
+                    });
+                    
+                    const refreshTokenValue = loginResponse.refreshToken || '';
+                    // Убеждаемся что токен действительно есть
+                    if (!authToken) {
+                        console.error('❌ No authToken available for redirect!');
+                        showMessage('Ошибка: токен не был получен. Попробуйте войти снова.', 'error');
+                        return;
+                    }
+                    
+                    const redirectUrl = isSuperAdmin
+                        ? 'test-micro-modules.html?token=' + encodeURIComponent(authToken) + '&refreshToken=' + encodeURIComponent(refreshTokenValue)
+                        : 'dashboard.html?token=' + encodeURIComponent(authToken) + '&refreshToken=' + encodeURIComponent(refreshTokenValue);
+                    
+                    console.log('🔄 Redirecting to:', redirectUrl);
+                    console.log('🔄 AuthToken length:', authToken.length);
+                    console.log('🔄 RefreshToken length:', refreshTokenValue.length);
+                    isRedirecting = true;
+                    window.location.href = redirectUrl;
+                }, 500);
+            } catch (error) {
+                console.error('nFA verification error:', error);
+                showMessage('Ошибка верификации nFA: ' + error.message, 'error');
+            } finally {
+                hideLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
             }
         }
 
@@ -2312,10 +2885,10 @@
                 const referralCode = referralCodeFromUrl || referralCodeFromStorage;
                 
                 const requestBody = { 
-                    email, 
-                    password, 
-                    firstName, 
-                    lastName 
+                        email, 
+                        password, 
+                        firstName, 
+                        lastName 
                 };
                 
                 // Добавляем реферальный код, если он есть
@@ -2443,10 +3016,10 @@
                 
                 // Use smart auth endpoint that handles both login and registration
                 const requestBody = { 
-                    email, 
-                    password,
-                    firstName, 
-                    lastName
+                        email, 
+                        password,
+                        firstName, 
+                        lastName
                 };
                 
                 // Добавляем реферальный код, если он есть
@@ -2613,6 +3186,14 @@
                     console.log('✅ Super admin already on correct page');
                 }
             } else {
+                // Если роли нет или она пустая, редиректим на dashboard по умолчанию
+                if (!highestRole || !highestRole.name) {
+                    console.log('⚠️ No role found, redirecting to dashboard.html by default');
+                    isRedirecting = true;
+                    window.location.href = 'dashboard.html';
+                    return;
+                }
+                
                 if (!currentPage.includes('dashboard.html')) {
                     console.log('🔄 Redirecting to dashboard.html');
                     isRedirecting = true;

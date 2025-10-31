@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вход через Telegram - Loginus</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -104,16 +105,16 @@
             <div class="logo-text">Loginus</div>
         </div>
 
-        <h1>Вход через Telegram</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h1 style="margin: 0;">Вход через Telegram</h1>
+            <button onclick="switchTelegramAccount()" style="background: transparent; border: 1px solid #667eea; color: #667eea; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease;">
+                <i class="fas fa-exchange-alt"></i> Сменить аккаунт
+            </button>
+        </div>
         <p>Нажмите кнопку ниже, чтобы войти через ваш Telegram аккаунт</p>
 
-        <div class="telegram-widget-container">
-            <script async src="https://telegram.org/js/telegram-widget.js?22" 
-                data-telegram-login="sdfisdhfksdf_bot" 
-                data-size="large" 
-                data-onauth="onTelegramAuth(user)" 
-                data-request-access="write">
-            </script>
+        <div class="telegram-widget-container" id="telegram-widget-container">
+            <!-- Telegram Widget будет вставлен динамически после очистки cookies -->
         </div>
 
         <div class="loading" id="loading">
@@ -126,6 +127,117 @@
     </div>
 
     <script>
+        // Функция для смены аккаунта Telegram
+        function switchTelegramAccount() {
+            const message = 'Для смены аккаунта Telegram:\n\n' +
+                          '1. Откройте новую вкладку в режиме инкогнито (Ctrl+Shift+N)\n' +
+                          '2. Или выйдите из Telegram Web на web.telegram.org\n' +
+                          '3. Затем нажмите "ОК" для продолжения\n\n' +
+                          'Продолжить?';
+            
+            if (confirm(message)) {
+                console.log('🔄 Switching Telegram account - clearing Telegram session data...');
+                
+                // Очищаем все данные, связанные с Telegram
+                localStorage.removeItem('telegram_auth');
+                localStorage.removeItem('telegram_user');
+                
+                // Очищаем cookies, связанные с Telegram (более агрессивная очистка)
+                document.cookie.split(";").forEach(function(c) { 
+                    const cookieName = c.split("=")[0].trim();
+                    if (cookieName.toLowerCase().includes('telegram') || cookieName.toLowerCase().includes('tg') || cookieName.toLowerCase().startsWith('t_')) {
+                        // Очищаем для всех возможных путей и доменов
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=." + window.location.hostname;
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.telegram.org";
+                        console.log('🗑️ Cleared Telegram cookie:', cookieName);
+                    }
+                });
+                
+                // Очищаем sessionStorage от данных Telegram
+                Object.keys(sessionStorage).forEach(key => {
+                    if (key.toLowerCase().includes('telegram') || key.toLowerCase().includes('tg')) {
+                        sessionStorage.removeItem(key);
+                        console.log('🗑️ Cleared sessionStorage:', key);
+                    }
+                });
+                
+                // Удаляем старый виджет полностью и перезагружаем страницу с forceLogin=true
+                // Это более надежный способ для Telegram
+                console.log('🔄 Reloading page with forceLogin=true for Telegram account switch...');
+                
+                // Удаляем виджет перед перезагрузкой
+                const widgetContainer = document.getElementById('telegram-widget-container');
+                if (widgetContainer) {
+                    widgetContainer.innerHTML = '';
+                }
+                
+                // Перезагружаем страницу с forceLogin
+                window.location.href = 'telegram-login.html?forceLogin=true&t=' + Date.now();
+            }
+        }
+        
+        // Делаем функцию глобальной
+        window.switchTelegramAccount = switchTelegramAccount;
+        
+        // Проверяем, нужно ли принудительно показать выбор аккаунта
+        const urlParams = new URLSearchParams(window.location.search);
+        const forceLogin = urlParams.get('forceLogin') === 'true';
+        
+        if (forceLogin) {
+            console.log('🔄 Force login mode - clearing Telegram session data to show account selection...');
+            // Очищаем все данные, связанные с Telegram
+            localStorage.removeItem('telegram_auth');
+            localStorage.removeItem('telegram_user');
+            // Очищаем cookies, связанные с Telegram (все cookies, начинающиеся с telegram или tg)
+            document.cookie.split(";").forEach(function(c) { 
+                const cookieName = c.split("=")[0].trim();
+                if (cookieName.toLowerCase().includes('telegram') || cookieName.toLowerCase().includes('tg') || cookieName.toLowerCase().startsWith('t_')) {
+                    // Очищаем cookie для всех возможных путей и доменов
+                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
+                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
+                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=." + window.location.hostname;
+                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.telegram.org";
+                    console.log('🗑️ Cleared Telegram cookie:', cookieName);
+                }
+            });
+            
+            // Также очищаем sessionStorage от данных Telegram
+            Object.keys(sessionStorage).forEach(key => {
+                if (key.toLowerCase().includes('telegram') || key.toLowerCase().includes('tg')) {
+                    sessionStorage.removeItem(key);
+                    console.log('🗑️ Cleared sessionStorage:', key);
+                }
+            });
+        } else {
+            console.log('ℹ️ Normal login mode - using existing Telegram session if available');
+        }
+        
+        // Вставляем Telegram Widget
+        const widgetContainer = document.getElementById('telegram-widget-container');
+        if (widgetContainer) {
+            const script = document.createElement('script');
+            script.async = true;
+            script.src = 'https://telegram.org/js/telegram-widget.js?22';
+            script.setAttribute('data-telegram-login', 'sdfisdhfksdf_bot');
+            script.setAttribute('data-size', 'large');
+            script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+            script.setAttribute('data-request-access', 'write');
+            
+            if (forceLogin) {
+                // Если включен режим смены аккаунта, добавляем уникальный return_to URL
+                const uniqueTimestamp = Date.now();
+                const returnToUrl = window.location.origin + window.location.pathname + '?t=' + uniqueTimestamp + '&forceLogin=true';
+                script.setAttribute('data-return-url', returnToUrl);
+                console.log('✅ Telegram Widget loaded with unique return_to URL (force login mode):', returnToUrl);
+            } else {
+                console.log('✅ Telegram Widget loaded (normal mode)');
+            }
+            
+            widgetContainer.appendChild(script);
+        }
+        
         // Determine API base URL
         const API_BASE = (() => {
             const hostname = window.location.hostname;
@@ -172,10 +284,96 @@
                     body: JSON.stringify(requestBody)
                 });
                 
-                const data = await response.json();
-                console.log('Login response:', data);
+                // Получаем данные ответа
+                let data;
+                try {
+                    console.log('📥 Telegram login response status:', response.status, response.ok);
+                    console.log('📥 Telegram login response headers:', response.headers.get('content-type'));
+                    
+                    const responseText = await response.text();
+                    console.log('📥 Telegram login raw response (length:', responseText.length, '):', responseText);
+                    console.log('📥 Telegram login raw response (first 500 chars):', responseText.substring(0, 500));
+                    
+                    if (!response.ok) {
+                        console.error('❌ Telegram login error response:', response.status, responseText);
+                        let errorMessage = 'Неизвестная ошибка';
+                        try {
+                            const errorData = JSON.parse(responseText);
+                            errorMessage = errorData.message || errorData.error || errorMessage;
+                        } catch (e) {
+                            errorMessage = responseText || `HTTP ${response.status}`;
+                        }
+                        alert('Ошибка входа: ' + errorMessage);
+                        document.getElementById('loading').style.display = 'none';
+                        return;
+                    }
+                    
+                    if (!responseText || responseText.trim() === '') {
+                        console.error('❌ Empty response body');
+                        alert('Ошибка: Пустой ответ от сервера');
+                        document.getElementById('loading').style.display = 'none';
+                        return;
+                    }
+                    
+                    try {
+                        data = JSON.parse(responseText);
+                        console.log('✅ Response parsed successfully');
+                    } catch (parseError) {
+                        console.error('❌ JSON parse error:', parseError);
+                        console.error('❌ Response text that failed to parse:', responseText);
+                        alert('Ошибка обработки ответа сервера: ' + parseError.message);
+                        document.getElementById('loading').style.display = 'none';
+                        return;
+                    }
+                } catch (readError) {
+                    console.error('❌ Error reading response:', readError);
+                    alert('Ошибка чтения ответа сервера: ' + readError.message);
+                    document.getElementById('loading').style.display = 'none';
+                    return;
+                }
+                
+                console.log('✅ Login response parsed:', data);
+                console.log('📋 Response data type:', typeof data);
+                console.log('📋 Response data keys:', Object.keys(data));
+                console.log('📋 Response data.requiresNFA:', data.requiresNFA, 'type:', typeof data.requiresNFA);
+                console.log('📋 Response data.userId:', data.userId);
+                console.log('📋 Response data.methods:', data.methods);
+                console.log('📋 Response data.error:', data.error);
+                console.log('📋 Response data.message:', data.message);
+                console.log('📋 Checking requiresNFA:', data.requiresNFA === true, data.requiresNFA === 'true', data.requiresNFA === 1, !!data.requiresNFA);
+                
+                // Проверяем requiresNFA (может быть true, строка "true", или просто truthy)
+                if (data.requiresNFA === true || data.requiresNFA === 'true' || data.requiresNFA === 1 || !!data.requiresNFA) {
+                    // nFA required - redirect to index.html with nFA parameters
+                    console.log('✅ nFA required detected, methods:', data.methods);
+                    const userId = data.userId || data.user?.id;
+                    console.log('Extracted userId:', userId);
+                    if (!userId) {
+                        console.error('❌ No userId in response:', data);
+                        alert('Ошибка: ID пользователя не найден в ответе');
+                        document.getElementById('loading').style.display = 'none';
+                        return;
+                    }
+                    const methods = data.methods || [];
+                    const methodsParam = encodeURIComponent(JSON.stringify(methods));
+                    console.log('🔄 Redirecting to index.html with nFA params:', {
+                        userId: userId,
+                        methods: methods,
+                        url: `index.html?nfa=true&userId=${userId}&methods=${methodsParam}`
+                    });
+                    // Очищаем флаг перед редиректом
+                    sessionStorage.removeItem('nfaCodesSent');
+                    // Выполняем редирект
+                    const redirectUrl = `index.html?nfa=true&userId=${userId}&methods=${methodsParam}`;
+                    console.log('🔄 About to redirect to:', redirectUrl);
+                    window.location.href = redirectUrl;
+                    return;
+                }
+                
+                console.log('Not nFA, checking for accessToken...');
                 
                 if (data.accessToken) {
+                    console.log('AccessToken found, setting tokens and redirecting to dashboard');
                     localStorage.setItem('authToken', data.accessToken);
                     localStorage.setItem('accessToken', data.accessToken);
                     if (data.refreshToken) {
@@ -185,12 +383,26 @@
                     // Redirect to dashboard
                     window.location.href = 'dashboard.html';
                 } else {
-                    alert('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+                    console.error('❌ No accessToken and no requiresNFA, showing error.');
+                    console.error('❌ Full data object:', data);
+                    console.error('❌ Full data JSON:', JSON.stringify(data, null, 2));
+                    
+                    // Проверяем, есть ли ошибка в ответе
+                    if (data.error || data.message) {
+                        console.error('❌ Error in response:', data.error || data.message);
+                        alert('Ошибка входа: ' + (data.error || data.message));
+                    } else {
+                        console.error('❌ Unknown response format');
+                        alert('Ошибка входа: Неизвестный формат ответа. Проверьте консоль браузера для деталей.');
+                    }
                     document.getElementById('loading').style.display = 'none';
                 }
             } catch (error) {
-                console.error('Login error:', error);
-                alert('Ошибка входа: ' + error.message);
+                console.error('❌ Login error (catch block):', error);
+                console.error('❌ Error name:', error.name);
+                console.error('❌ Error message:', error.message);
+                console.error('❌ Error stack:', error.stack);
+                alert('Ошибка входа: ' + (error.message || 'Неизвестная ошибка'));
                 document.getElementById('loading').style.display = 'none';
             }
         }

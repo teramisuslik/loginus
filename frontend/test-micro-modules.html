@@ -975,7 +975,16 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:3001/api';
+        // Автоматически определяем базовый URL API
+        const API_BASE = (() => {
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                return `${window.location.protocol}//${window.location.hostname}:3001/api`;
+            } else {
+                // Для продакшена используем тот же домен
+                return `${window.location.protocol}//${window.location.hostname}/api`;
+            }
+        })();
+        console.log('🌐 API_BASE:', API_BASE);
         
         async function makeRequest(url, options = {}) {
             try {
@@ -1036,13 +1045,30 @@
             output.innerHTML = '<div class="loading"><div class="spinner"></div>Загружаем все микромодули...</div>';
             
             try {
-                const modules = await makeRequest(`${API_BASE}/micro-modules`);
+                console.log('🔍 Requesting modules from:', `${API_BASE}/micro-modules`);
+                const response = await fetch(`${API_BASE}/micro-modules`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                console.log('📡 Response status:', response.status);
+                const modules = await response.json();
+                console.log('📦 Modules received:', modules);
+                console.log('📦 Modules count:', modules?.length || 0);
+                
+                if (!Array.isArray(modules)) {
+                    throw new Error(`Ожидался массив, получен: ${typeof modules}`);
+                }
+                
                 output.innerHTML = `<div class="success">Найдено ${modules.length} микромодулей:\n${JSON.stringify(modules, null, 2)}</div>`;
                 output.className = 'output success';
                 
                 // Обновляем сетку модулей
                 updateModulesGrid(modules);
             } catch (error) {
+                console.error('❌ Error loading modules:', error);
                 output.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
                 output.className = 'output error';
             }
@@ -1078,7 +1104,17 @@
 
         function updateModulesGrid(modules) {
             const grid = document.getElementById('modulesGrid');
+            if (!grid) {
+                console.error('Modules grid element not found');
+                return;
+            }
+            
             grid.innerHTML = '';
+            
+            if (!modules || modules.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; padding: 2rem; color: #64748b;">Модули не найдены. Убедитесь, что все модули зарегистрированы на сервере.</div>';
+                return;
+            }
             
             modules.forEach(module => {
                 const card = document.createElement('div');
@@ -1097,8 +1133,8 @@
                         </div>
                     </div>
                     <div class="module-info">
-                        <p><strong>Версия:</strong> ${module.version}</p>
-                        <p><strong>Описание:</strong> ${module.description}</p>
+                        <p><strong>Версия:</strong> ${module.version || 'N/A'}</p>
+                        <p><strong>Описание:</strong> ${module.description || 'Нет описания'}</p>
                         <p><strong>Права:</strong> ${module.permissions ? module.permissions.join(', ') : 'Нет'}</p>
                     </div>
                     <div class="module-actions">
@@ -1116,6 +1152,8 @@
                 
                 grid.appendChild(card);
             });
+            
+            console.log(`✅ Updated modules grid with ${modules.length} modules`);
         }
 
         async function toggleModule(moduleName, enable) {
@@ -2240,6 +2278,7 @@
             setupNavigationHandlers();
             
             initializeUser();
+            // Автоматически загружаем все модули и обновляем сетку
             getAllModules();
         };
     </script>

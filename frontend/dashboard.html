@@ -1395,6 +1395,24 @@
                                 <small class="text-muted" id="emailStatus">Email не подтвержден</small>
                             </div>
                             
+                            <div class="form-group" id="githubInfoGroup" style="display: none;">
+                                <label>GitHub информация</label>
+                                <div style="background: #f3f4f6; padding: 0.75rem; border-radius: 6px; margin-top: 0.5rem;">
+                                    <div style="margin-bottom: 0.5rem;">
+                                        <strong>GitHub Username:</strong> <span id="displayGithubUsername" style="font-family: monospace; background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">-</span>
+                                        <button type="button" onclick="copyToClipboard(document.getElementById('displayGithubUsername').textContent)" style="margin-left: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.85rem; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                            <i class="fas fa-copy"></i> Копировать
+                                        </button>
+                                    </div>
+                                    <div style="margin-bottom: 0.5rem;">
+                                        <strong>GitHub ID:</strong> <span id="displayGithubId" style="font-family: monospace; background: white; padding: 0.25rem 0.5rem; border-radius: 4px;">-</span>
+                                        <small class="text-muted" style="margin-left: 0.5rem;">(только для справки)</small>
+                                    </div>
+                                    <small class="text-muted" style="display: block; margin-top: 0.5rem;">
+                                        💡 Ваш GitHub username используется для приглашений других пользователей. Система ищет пользователей строго по полю GitHub username в базе данных.
+                                    </small>
+                                </div>
+                            </div>
                             
                             
                             
@@ -1424,15 +1442,19 @@
                         <div class="security-settings">
                             <div class="security-item">
                                 <div class="security-info">
-                                    <h3>Двухфакторная аутентификация</h3>
-                                    <p>Дополнительная защита вашего аккаунта</p>
+                                    <h3>nFA (Многофакторная аутентификация)</h3>
+                                    <p>Выберите методы подтверждения при входе. Можно выбрать любое количество из подключенных способов входа.</p>
                                 </div>
-                                <div class="security-action">
-                                    <label class="switch">
-                                        <input type="checkbox" id="twoFactorEnabled">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
+                            </div>
+                            
+                            <div id="nfaMethodsContainer" style="margin-top: 1rem;">
+                                <!-- Чекбоксы для методов nFA будут добавлены динамически -->
+                            </div>
+                            
+                            <div style="margin-top: 1rem;">
+                                <button type="button" class="btn btn-primary" id="saveNfaSettingsBtn">
+                                    <i class="fas fa-save"></i> Сохранить настройки nFA
+                                </button>
                             </div>
                             
                         </div>
@@ -1563,8 +1585,12 @@
                 </div>
                 <div class="form-group" id="inviteGithubGroup" style="display: none;">
                     <label for="inviteGithubUsername">GitHub username *</label>
-                    <input type="text" id="inviteGithubUsername" name="githubUsername" placeholder="username">
-                    <small class="form-text text-muted">Введите GitHub username пользователя (без @)</small>
+                    <input type="text" id="inviteGithubUsername" name="githubUsername" placeholder="username (без @)">
+                    <small class="form-text text-muted">
+                        Введите GitHub username пользователя (без символа @). 
+                        <strong>💡 Совет:</strong> Свой GitHub username можно посмотреть в настройках профиля (раздел "Настройки" → "GitHub информация").
+                        Система будет искать пользователя строго по полю GitHub username в базе данных, поэтому важно указать точный username.
+                    </small>
                 </div>
                 <div class="form-group" id="inviteTelegramGroup" style="display: none;">
                     <label for="inviteTelegramUsername">Telegram username *</label>
@@ -1814,7 +1840,7 @@
             }
             isAppInitializing = true;
             
-            // Check for tokens in URL parameters (from OAuth callbacks)
+            // Check for tokens in URL parameters (from OAuth callbacks) - ПЕРВЫМ делом!
             const urlParams = new URLSearchParams(window.location.search);
             const urlToken = urlParams.get('token');
             const urlRefreshToken = urlParams.get('refreshToken');
@@ -1823,12 +1849,20 @@
                 console.log('🔑 Token found in URL, saving to localStorage');
                 authToken = urlToken;
                 localStorage.setItem('authToken', urlToken);
+                localStorage.setItem('accessToken', urlToken); // Также сохраняем как accessToken для совместимости
                 if (urlRefreshToken) {
                     localStorage.setItem('refreshToken', urlRefreshToken);
+                    console.log('✅ Refresh token also saved');
                 }
-                // Clean URL by removing token parameters
+                console.log('✅ Token saved to localStorage:', urlToken.substring(0, 20) + '...');
+                console.log('✅ Token length:', urlToken.length);
+                
+                // НЕМЕДЛЕННО очищаем URL чтобы избежать проблем с повторным парсингом
                 const cleanUrl = window.location.pathname;
                 window.history.replaceState({}, document.title, cleanUrl);
+                
+                // Небольшая задержка чтобы убедиться что localStorage сохранен
+                await new Promise(resolve => setTimeout(resolve, 50));
             } else {
                 // Check if user is logged in
                 authToken = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
@@ -1839,7 +1873,8 @@
                 window.location.href = 'index.html';
                 return;
             }
-            console.log('🔑 Token found, proceeding with dashboard initialization');
+            console.log('🔑 Token found, proceeding with dashboard initialization. Token:', authToken.substring(0, 20) + '...');
+            console.log('🔑 AuthToken from localStorage:', localStorage.getItem('authToken')?.substring(0, 20) + '...');
 
             try {
                 // Load user data
@@ -1855,7 +1890,25 @@
                 showNotification('Добро пожаловать в систему!', 'success');
             } catch (error) {
                 console.error('Error initializing app:', error);
-                showNotification('Ошибка загрузки данных', 'error');
+                // Проверяем, не является ли ошибка 401 - тогда возможно токен невалиден
+                if (error.message && error.message.includes('Unauthorized')) {
+                    console.error('❌ Token validation failed, redirecting to login');
+                    // Не редиректим сразу - возможно токен еще не сохранен
+                    // Дадим еще один шанс через небольшую задержку
+                    setTimeout(() => {
+                        const tokenCheck = localStorage.getItem('authToken');
+                        if (!tokenCheck) {
+                            console.error('❌ Token still not in localStorage, redirecting to login');
+                            window.location.href = 'index.html';
+                        } else {
+                            console.log('✅ Token found in localStorage, retrying initialization');
+                            // Повторяем попытку инициализации
+                            initializeApp();
+                        }
+                    }, 500);
+                } else {
+                    showNotification('Ошибка загрузки данных', 'error');
+                }
             }
         }
 
@@ -1981,9 +2034,18 @@
         // Load current user
         async function loadCurrentUser() {
             try {
+                // Проверяем, что токен доступен перед запросом
+                const tokenBeforeRequest = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                if (!tokenBeforeRequest) {
+                    console.error('❌ No token available for loadCurrentUser');
+                    throw new Error('No authentication token available');
+                }
+                console.log('🔑 Making request to /api/auth/me with token:', tokenBeforeRequest.substring(0, 20) + '...');
+                
                 // Always load user data from API to get current user info
                 const response = await apiCall('/api/auth/me', { method: 'GET' });
-                    currentUser = response;
+                console.log('✅ User data loaded successfully:', response);
+                currentUser = response;
                 
                 // Update localStorage with fresh user data
                 localStorage.setItem('userData', JSON.stringify(currentUser));
@@ -2957,13 +3019,40 @@
 
         // API call function
         async function apiCall(endpoint, options = {}) {
+            // Убеждаемся что токен актуален перед каждым запросом
+            let currentToken = authToken || localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+            
+            // Если токен все еще не найден, проверяем URL (на случай если мы только что перешли с токеном)
+            if (!currentToken) {
+                const urlParamsCheck = new URLSearchParams(window.location.search);
+                const urlTokenCheck = urlParamsCheck.get('token');
+                if (urlTokenCheck) {
+                    console.log('🔑 Found token in URL during API call, saving it');
+                    currentToken = urlTokenCheck;
+                    authToken = urlTokenCheck;
+                    localStorage.setItem('authToken', urlTokenCheck);
+                    localStorage.setItem('accessToken', urlTokenCheck);
+                }
+            }
+            
+            if (!currentToken) {
+                console.error('❌ No token available for API call to:', endpoint);
+                throw new Error('No authentication token available');
+            }
+            
             const url = `${window.API_BASE_URL}${endpoint}`;
             const defaultOptions = {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
+                    'Authorization': `Bearer ${currentToken}`
                 }
             };
+            
+            // Обновляем authToken если он изменился
+            if (currentToken !== authToken) {
+                authToken = currentToken;
+                console.log('🔄 Updated authToken from localStorage/URL');
+            }
 
             const response = await fetch(url, { ...defaultOptions, ...options });
             
@@ -2979,7 +3068,38 @@
                         window.location.href = 'index.html?require2fa=true';
                         throw new Error('2FA required');
                     } else {
+                        // Token expired или невалиден - проверяем, может токен еще в URL
+                        const urlParamsCheck = new URLSearchParams(window.location.search);
+                        const urlTokenCheck = urlParamsCheck.get('token');
+                        
+                        if (urlTokenCheck) {
+                            console.log('⚠️ 401 error, but token found in URL, saving and retrying');
+                            authToken = urlTokenCheck;
+                            localStorage.setItem('authToken', urlTokenCheck);
+                            localStorage.setItem('accessToken', urlTokenCheck);
+                            // Повторяем запрос с токеном из URL
+                            console.log('🔄 Retrying request with token from URL');
+                            const retryUrl = `${window.API_BASE_URL}${endpoint}`;
+                            const retryOptions = {
+                                ...defaultOptions,
+                                ...options,
+                                headers: {
+                                    ...defaultOptions.headers,
+                                    ...options.headers,
+                                    'Authorization': `Bearer ${urlTokenCheck}`
+                                }
+                            };
+                            const retryResponse = await fetch(retryUrl, retryOptions);
+                            if (retryResponse.ok) {
+                                const retryData = await retryResponse.json();
+                                return retryData;
+                            } else {
+                                console.error('❌ Retry also failed with status:', retryResponse.status);
+                            }
+                        }
+                        
                         // Token expired, redirect to login
+                        console.error('❌ Token expired and no token in URL, redirecting to login');
                         localStorage.removeItem('authToken');
                         localStorage.removeItem('refreshToken');
                         localStorage.removeItem('userData');
@@ -4039,17 +4159,21 @@
                         return;
                     }
                     
+                    console.log(`🔍 [loadRolesForInvite] Loading roles for organization ${organizationId}`);
                     const response = await apiCall(`/api/organizations/${organizationId}/roles`, {
                         method: 'GET'
                     });
+                    console.log(`🔍 [loadRolesForInvite] Response:`, response);
                     
                     // Handle different response formats
                     const roles = Array.isArray(response) ? response : (response?.roles || response?.data || []);
+                    console.log(`🔍 [loadRolesForInvite] Parsed ${roles.length} roles`);
                     
                     roleSelect.innerHTML = '<option value="">Выберите роль</option>';
                     roleSelect.disabled = false;
                     
                     if (roles && roles.length > 0) {
+                        console.log(`✅ [loadRolesForInvite] Adding ${roles.length} roles to select`);
                         roles.forEach(role => {
                             const option = document.createElement('option');
                             option.value = role.id || role.value;
@@ -4057,6 +4181,7 @@
                             roleSelect.appendChild(option);
                         });
                     } else {
+                        console.warn(`⚠️ [loadRolesForInvite] No roles found, showing error message`);
                         roleSelect.innerHTML = '<option value="">Роли не найдены</option>';
                     }
                 }
@@ -4113,7 +4238,7 @@
             const githubGroup = document.getElementById('inviteGithubGroup');
             const telegramGroup = document.getElementById('inviteTelegramGroup');
             const emailInput = document.getElementById('inviteEmail');
-            const githubInput = document.getElementById('inviteGithubUsername');
+            const githubUsernameInput = document.getElementById('inviteGithubUsername');
             const telegramInput = document.getElementById('inviteTelegramUsername');
 
             // Скрываем все группы и очищаем поля
@@ -4121,7 +4246,7 @@
             if (githubGroup) githubGroup.style.display = 'none';
             if (telegramGroup) telegramGroup.style.display = 'none';
             if (emailInput) emailInput.required = false;
-            if (githubInput) githubInput.required = false;
+            if (githubUsernameInput) githubUsernameInput.required = false;
             if (telegramInput) telegramInput.required = false;
 
             // Показываем нужную группу
@@ -4130,12 +4255,13 @@
                 if (emailInput) emailInput.required = true;
             } else if (identifierType === 'github') {
                 if (githubGroup) githubGroup.style.display = 'block';
-                if (githubInput) githubInput.required = true;
+                if (githubUsernameInput) githubUsernameInput.required = true;
             } else if (identifierType === 'telegram') {
                 if (telegramGroup) telegramGroup.style.display = 'block';
                 if (telegramInput) telegramInput.required = true;
             }
         }
+
 
         // Send invitation
         async function sendInvitation() {
@@ -4867,16 +4993,29 @@
                     await checkModuleStatusAndHide();
                 }
                 
-                // Set security settings
-                console.log('🔍 2FA Status from server:', user.twoFactorEnabled);
-                console.log('🔍 Full user data:', user);
-                console.log('🔍 Setting checkbox to:', user.twoFactorEnabled || false);
-                const checkbox = document.getElementById('twoFactorEnabled');
-                if (checkbox) {
-                    checkbox.checked = user.twoFactorEnabled || false;
-                    console.log('🔍 Checkbox set to:', checkbox.checked);
+                // Load nFA settings
+                await loadNfaSettings(user);
+                
+                // Показываем GitHub информацию, если пользователь зарегистрирован через GitHub
+                if (user.githubId || user.githubUsername) {
+                    const githubInfoGroup = document.getElementById('githubInfoGroup');
+                    const displayGithubId = document.getElementById('displayGithubId');
+                    const displayGithubUsername = document.getElementById('displayGithubUsername');
+                    
+                    if (githubInfoGroup) {
+                        githubInfoGroup.style.display = 'block';
+                    }
+                    if (displayGithubId && user.githubId) {
+                        displayGithubId.textContent = user.githubId;
+                    }
+                    if (displayGithubUsername && user.githubUsername) {
+                        displayGithubUsername.textContent = user.githubUsername;
+                    }
                 } else {
-                    console.error('❌ Checkbox not found!');
+                    const githubInfoGroup = document.getElementById('githubInfoGroup');
+                    if (githubInfoGroup) {
+                        githubInfoGroup.style.display = 'none';
+                    }
                 }
                 
             } catch (error) {
@@ -4906,9 +5045,9 @@
                 loadSettings(); // Reload original data
             });
 
-            // Security settings toggles
-            document.getElementById('twoFactorEnabled')?.addEventListener('change', async function() {
-                await updateSecuritySetting('twoFactorEnabled', this.checked);
+            // nFA settings button
+            document.getElementById('saveNfaSettingsBtn')?.addEventListener('click', async function() {
+                await saveNfaSettings();
             });
         }
 
@@ -5438,7 +5577,99 @@
             });
         }
 
-        // Update security setting
+        // Load and render nFA methods
+        async function loadNfaSettings(user) {
+            try {
+                const container = document.getElementById('nfaMethodsContainer');
+                if (!container) return;
+                
+                // Получаем доступные методы пользователя
+                const linkedMethods = getLinkedMethodsFromUser(user);
+                
+                // Убираем дубликаты, используя Set
+                const uniqueMethods = [...new Set(linkedMethods)];
+                
+                // Получаем текущие настройки nFA
+                console.log('🔍 [loadNfaSettings] User object:', user);
+                console.log('🔍 [loadNfaSettings] user.mfaSettings:', user?.mfaSettings);
+                const currentNfaMethods = user?.mfaSettings?.methods || [];
+                const nfaEnabled = user?.mfaSettings?.enabled || false;
+                console.log('🔍 [loadNfaSettings] currentNfaMethods:', currentNfaMethods);
+                console.log('🔍 [loadNfaSettings] nfaEnabled:', nfaEnabled);
+                
+                const methodTitles = {
+                    EMAIL: 'Email',
+                    PHONE_TELEGRAM: 'Telegram',
+                    GITHUB: 'GitHub'
+                };
+                
+                // Показываем только привязанные методы (без дубликатов)
+                const html = uniqueMethods
+                    .filter(method => ['EMAIL', 'PHONE_TELEGRAM', 'GITHUB'].includes(method))
+                    .map(method => {
+                        const isSelected = currentNfaMethods.includes(method);
+                        return `
+                            <div class="security-item" style="margin-bottom: 0.75rem;">
+                                <div class="security-info">
+                                    <h3 style="margin: 0; font-size: 0.95rem;">${methodTitles[method] || method}</h3>
+                                </div>
+                                <div class="security-action">
+                                    <label class="switch">
+                                        <input type="checkbox" class="nfa-method-checkbox" data-method="${method}" ${isSelected ? 'checked' : ''}>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                
+                if (html) {
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<p style="color: #6b7280; font-size: 0.9rem;">Для использования nFA необходимо привязать хотя бы один способ входа</p>';
+                }
+                
+            } catch (error) {
+                console.error('Ошибка загрузки настроек nFA:', error);
+            }
+        }
+        
+        // Save nFA settings
+        async function saveNfaSettings() {
+            try {
+                const checkboxes = document.querySelectorAll('.nfa-method-checkbox');
+                const selectedMethods = Array.from(checkboxes)
+                    .filter(cb => cb.checked)
+                    .map(cb => cb.getAttribute('data-method'));
+                
+                if (selectedMethods.length === 0) {
+                    // Если ничего не выбрано, отключаем nFA через пустой массив
+                    await apiCall('/api/auth/nfa/configure', {
+                        method: 'POST',
+                        body: JSON.stringify({ methods: [] })
+                    });
+                    showNotification('nFA отключена', 'success');
+                } else {
+                    await apiCall('/api/auth/nfa/configure', {
+                        method: 'POST',
+                        body: JSON.stringify({ 
+                            methods: selectedMethods,
+                            requiredMethods: selectedMethods.length // Требуем подтверждения всех выбранных методов
+                        })
+                    });
+                    showNotification(`nFA настроена: выбрано методов - ${selectedMethods.length}`, 'success');
+                }
+                
+                // Перезагружаем настройки пользователя
+                await loadCurrentUser();
+                
+            } catch (error) {
+                console.error('Ошибка сохранения настроек nFA:', error);
+                showNotification('Ошибка сохранения настроек nFA: ' + (error.message || 'Неизвестная ошибка'), 'error');
+            }
+        }
+        
+        // Update security setting (legacy, kept for backward compatibility)
         async function updateSecuritySetting(setting, value) {
             try {
                 if (setting === 'twoFactorEnabled') {

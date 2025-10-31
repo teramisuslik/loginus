@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вход через GitHub - Loginus</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -134,7 +135,12 @@
             <div class="logo-text">Loginus</div>
         </div>
 
-        <h1>Вход через GitHub</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h1 style="margin: 0;">Вход через GitHub</h1>
+            <button onclick="switchGitHubAccount()" style="background: transparent; border: 1px solid #667eea; color: #667eea; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.9rem; cursor: pointer; transition: all 0.3s ease;">
+                <i class="fas fa-exchange-alt"></i> Сменить аккаунт
+            </button>
+        </div>
         <p>Нажмите кнопку ниже, чтобы войти через ваш GitHub аккаунт</p>
 
         <button class="github-button" onclick="startGitHubLogin()">
@@ -170,19 +176,99 @@
 
         console.log('🌐 API_BASE:', API_BASE);
 
-        async function startGitHubLogin() {
+        // Функция для смены аккаунта GitHub
+        function switchGitHubAccount() {
+            const message = 'Для смены аккаунта GitHub:\n\n' +
+                          '1. Откройте новую вкладку в режиме инкогнито (Ctrl+Shift+N)\n' +
+                          '2. Или выйдите из аккаунта GitHub на github.com\n' +
+                          '3. Затем нажмите "ОК" для продолжения\n\n' +
+                          'Продолжить?';
+            
+            if (confirm(message)) {
+                console.log('🔄 Switching GitHub account - opening OAuth in new window with forceLogin=true...');
+                
+                // Открываем OAuth URL в новом окне для принудительного показа экрана выбора
+                (async () => {
+                    try {
+                        const response = await fetch(`${API_BASE}/auth/multi/oauth/github/url?forceLogin=true`);
+                        const data = await response.json();
+                        
+                        if (data.url) {
+                            // Открываем в новом окне
+                            const popup = window.open(data.url, 'github-oauth', 'width=800,height=600,scrollbars=yes,resizable=yes');
+                            
+                            if (!popup) {
+                                alert('Браузер заблокировал всплывающее окно. Пожалуйста, разрешите всплывающие окна для этого сайта.');
+                                // Fallback - редирект на той же странице
+                                window.location.href = data.url;
+                            } else {
+                                // Следим за закрытием окна
+                                const checkClosed = setInterval(() => {
+                                    if (popup.closed) {
+                                        clearInterval(checkClosed);
+                                        // Проверяем, получили ли мы токен (может быть в localStorage)
+                                        if (localStorage.getItem('authToken') || localStorage.getItem('accessToken')) {
+                                            window.location.href = 'dashboard.html';
+                                        }
+                                    }
+                                }, 500);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        alert('Ошибка получения URL авторизации');
+                    }
+                })();
+            }
+        }
+        
+        // Делаем функцию глобальной
+        window.switchGitHubAccount = switchGitHubAccount;
+
+        async function startGitHubLogin(forceLogin = false) {
             document.getElementById('loading').style.display = 'block';
+            
+            // Если forceLogin=true, очищаем cookies GitHub перед редиректом
+            if (forceLogin) {
+                console.log('🧹 Clearing GitHub-related cookies for account switch...');
+                // Очищаем cookies, связанные с GitHub
+                document.cookie.split(";").forEach(function(c) { 
+                    const cookieName = c.split("=")[0].trim();
+                    if (cookieName.toLowerCase().includes('github') || cookieName.toLowerCase().includes('gh_') || cookieName.toLowerCase().startsWith('_gh')) {
+                        // Очищаем cookie для всех возможных путей и доменов
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=." + window.location.hostname;
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.github.com";
+                        console.log('🗑️ Cleared cookie:', cookieName);
+                    }
+                });
+            }
             
             try {
                 // Получаем URL для авторизации GitHub
-                const response = await fetch(`${API_BASE}/auth/multi/oauth/github/url`);
+                const url = forceLogin 
+                    ? `${API_BASE}/auth/multi/oauth/github/url?forceLogin=true`
+                    : `${API_BASE}/auth/multi/oauth/github/url`;
+                
+                console.log('📤 Requesting GitHub OAuth URL:', url, 'forceLogin:', forceLogin);
+                const response = await fetch(url);
                 const data = await response.json();
                 
                 console.log('GitHub auth data:', data);
+                console.log('🔍 GitHub OAuth URL:', data.url);
                 
                 if (data.url) {
+                    // Если forceLogin=true, добавляем timestamp для обхода кеша GitHub
+                    let finalUrl = data.url;
+                    if (forceLogin) {
+                        const separator = data.url.includes('?') ? '&' : '?';
+                        finalUrl = data.url + separator + '_t=' + Date.now();
+                        console.log('🔐 Force login mode - final URL with timestamp:', finalUrl);
+                    }
+                    
                     // Перенаправляем на GitHub
-                    window.location.href = data.url;
+                    window.location.href = finalUrl;
                 } else {
                     alert('Ошибка получения URL авторизации: ' + (data.error || 'Неизвестная ошибка'));
                     document.getElementById('loading').style.display = 'none';
@@ -194,9 +280,10 @@
             }
         }
 
-        // Проверка callback от GitHub
+        // Проверка callback от GitHub или автоматический запуск с forceLogin
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
+        const forceLogin = urlParams.get('forceLogin') === 'true';
         
         if (code) {
             document.getElementById('loading').style.display = 'block';
@@ -204,6 +291,10 @@
             // GitHub перенаправит обратно на /api/auth/multi/oauth/github/callback
             // и backend обработает это
             // Здесь просто ждем обработки
+        } else if (forceLogin) {
+            // Автоматически запускаем вход с forceLogin, если параметр установлен
+            console.log('🔄 Auto-starting GitHub login with forceLogin=true...');
+            startGitHubLogin(true);
         }
     </script>
 </body>
