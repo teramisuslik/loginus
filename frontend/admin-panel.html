@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loginus - Панель администратора</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .logo h1 {
+            color: #667eea;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .user-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-top: 1px solid #eee;
+        }
+
+        .user-details {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .logout-btn {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #ff3742;
+            transform: translateY(-2px);
+        }
+
+        .admin-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .panel-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .panel-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .card-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .settings-icon { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .roles-icon { background: linear-gradient(135deg, #f093fb, #f5576c); color: white; }
+        .features-icon { background: linear-gradient(135deg, #4facfe, #00f2fe); color: white; }
+        .users-icon { background: linear-gradient(135deg, #43e97b, #38f9d7); color: white; }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .card-description {
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #dee2e6;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
+            transform: translateY(-2px);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .admin-panel {
+                grid-template-columns: 1fr;
+            }
+            
+            .user-info {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">🔧</div>
+                <h1>Loginus Admin Panel</h1>
+            </div>
+            <div class="user-info">
+                <div class="user-details">
+                    <div class="user-avatar" id="userAvatar">A</div>
+                    <div>
+                        <div id="userName">Загрузка...</div>
+                        <div id="userRole" style="color: #666; font-size: 0.9rem;">super_admin</div>
+                    </div>
+                </div>
+                <button class="logout-btn" onclick="logout()">Выйти</button>
+            </div>
+        </div>
+
+        <div class="admin-panel">
+            <!-- Системные настройки -->
+            <div class="panel-card">
+                <div class="card-header">
+                    <div class="card-icon settings-icon">⚙️</div>
+                    <div>
+                        <div class="card-title">Системные настройки</div>
+                    </div>
+                </div>
+                <div class="card-description">
+                    Управление основными настройками системы: роли по умолчанию, сроки приглашений, лимиты команд.
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-primary" onclick="openSettings()">Настроить</button>
+                    <button class="btn btn-secondary" onclick="viewSettings()">Просмотр</button>
+                </div>
+            </div>
+
+            <!-- Управление ролями -->
+            <div class="panel-card">
+                <div class="card-header">
+                    <div class="card-icon roles-icon">👥</div>
+                    <div>
+                        <div class="card-title">Управление ролями</div>
+                    </div>
+                </div>
+                <div class="card-description">
+                    Создание и настройка ролей, назначение прав доступа, управление иерархией ролей.
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-primary" onclick="openRoles()">Управлять</button>
+                    <button class="btn btn-secondary" onclick="viewRoleHierarchy()">Иерархия</button>
+                </div>
+            </div>
+
+            <!-- Управление функциями -->
+            <div class="panel-card">
+                <div class="card-header">
+                    <div class="card-icon features-icon">🔌</div>
+                    <div>
+                        <div class="card-title">Управление функциями</div>
+                    </div>
+                </div>
+                <div class="card-description">
+                    Включение/отключение микромодулей: авторизация, реферальная система, 2FA, социальные сети.
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-primary" onclick="openFeatures()">Настроить</button>
+                    <button class="btn btn-secondary" onclick="viewFeatures()">Статус</button>
+                </div>
+            </div>
+
+            <!-- Управление пользователями -->
+            <div class="panel-card">
+                <div class="card-header">
+                    <div class="card-icon users-icon">👤</div>
+                    <div>
+                        <div class="card-title">Управление пользователями</div>
+                    </div>
+                </div>
+                <div class="card-description">
+                    Просмотр пользователей, назначение ролей, управление правами доступа.
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-primary" onclick="openUsers()">Управлять</button>
+                    <button class="btn btn-secondary" onclick="viewUsers()">Список</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">Загрузка...</div>
+        <div class="error" id="error"></div>
+        <div class="success" id="success"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+        let currentUser = null;
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', async () => {
+            await checkAuth();
+            await loadUserInfo();
+        });
+
+        // Проверка авторизации
+        async function checkAuth() {
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                window.location.href = '/index.html';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Unauthorized');
+                }
+
+                currentUser = await response.json();
+                
+                // Проверяем, что пользователь super_admin
+                if (!currentUser.roles?.includes('super_admin')) {
+                    showError('Доступ запрещен. Требуется роль super_admin');
+                    setTimeout(() => {
+                        window.location.href = '/dashboard.html';
+                    }, 3000);
+                    return;
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                localStorage.removeItem('accessToken');
+                window.location.href = '/index.html';
+            }
+        }
+
+        // Загрузка информации о пользователе
+        async function loadUserInfo() {
+            if (!currentUser) return;
+
+            document.getElementById('userName').textContent = 
+                `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.email;
+            
+            const avatar = document.getElementById('userAvatar');
+            const initials = (currentUser.firstName?.[0] || '') + (currentUser.lastName?.[0] || '');
+            avatar.textContent = initials || currentUser.email[0].toUpperCase();
+        }
+
+        // Открытие настроек
+        function openSettings() {
+            showLoading('Загрузка настроек...');
+            // TODO: Реализовать модальное окно с настройками
+            hideLoading();
+            showSuccess('Функция в разработке');
+        }
+
+        // Просмотр настроек
+        async function viewSettings() {
+            showLoading('Загрузка настроек...');
+            try {
+                const response = await fetch(`${API_BASE}/settings/system`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const settings = await response.json();
+                    console.log('System settings:', settings);
+                    showSuccess('Настройки загружены');
+                } else {
+                    throw new Error('Failed to load settings');
+                }
+            } catch (error) {
+                showError('Ошибка загрузки настроек: ' + error.message);
+            }
+            hideLoading();
+        }
+
+        // Управление ролями
+        function openRoles() {
+            showLoading('Загрузка ролей...');
+            // TODO: Реализовать интерфейс управления ролями
+            hideLoading();
+            showSuccess('Функция в разработке');
+        }
+
+        // Просмотр иерархии ролей
+        async function viewRoleHierarchy() {
+            showLoading('Загрузка иерархии...');
+            try {
+                const response = await fetch(`${API_BASE}/roles/hierarchy`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const hierarchy = await response.json();
+                    console.log('Role hierarchy:', hierarchy);
+                    showSuccess('Иерархия ролей загружена');
+                } else {
+                    throw new Error('Failed to load hierarchy');
+                }
+            } catch (error) {
+                showError('Ошибка загрузки иерархии: ' + error.message);
+            }
+            hideLoading();
+        }
+
+        // Управление функциями
+        function openFeatures() {
+            showLoading('Загрузка функций...');
+            // TODO: Реализовать интерфейс управления функциями
+            hideLoading();
+            showSuccess('Функция в разработке');
+        }
+
+        // Просмотр статуса функций
+        async function viewFeatures() {
+            showLoading('Загрузка функций...');
+            try {
+                const response = await fetch(`${API_BASE}/settings/features`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const features = await response.json();
+                    console.log('Features:', features);
+                    showSuccess('Функции загружены');
+                } else {
+                    throw new Error('Failed to load features');
+                }
+            } catch (error) {
+                showError('Ошибка загрузки функций: ' + error.message);
+            }
+            hideLoading();
+        }
+
+        // Управление пользователями
+        function openUsers() {
+            showLoading('Загрузка пользователей...');
+            // TODO: Реализовать интерфейс управления пользователями
+            hideLoading();
+            showSuccess('Функция в разработке');
+        }
+
+        // Просмотр пользователей
+        async function viewUsers() {
+            showLoading('Загрузка пользователей...');
+            try {
+                const response = await fetch(`${API_BASE}/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const users = await response.json();
+                    console.log('Users:', users);
+                    showSuccess('Пользователи загружены');
+                } else {
+                    throw new Error('Failed to load users');
+                }
+            } catch (error) {
+                showError('Ошибка загрузки пользователей: ' + error.message);
+            }
+            hideLoading();
+        }
+
+        // Выход из системы
+        function logout() {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/index.html';
+        }
+
+        // Утилиты
+        function showLoading(message) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').textContent = message;
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            const successEl = document.getElementById('success');
+            successEl.textContent = message;
+            successEl.style.display = 'block';
+            setTimeout(() => {
+                successEl.style.display = 'none';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

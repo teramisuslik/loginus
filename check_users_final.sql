@@ -1,0 +1,1 @@
+SELECT id, email, "firstName", "availableAuthMethods", "githubId", "messengerMetadata" FROM users ORDER BY "createdAt";

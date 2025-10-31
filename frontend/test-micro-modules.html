@@ -1,0 +1,2247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loginus - Тест микромодулей</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8fafc;
+            color: #1a202c;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 2rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(45deg, #ff6b6b, #ffa500);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: all 0.3s ease;
+            position: relative;
+            margin: 0.25rem 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            transform: translateX(4px);
+        }
+
+        .nav-item.active {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .nav-item:active {
+            transform: translateX(2px) scale(0.98);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .nav-item i {
+            margin-right: 0.75rem;
+            width: 20px;
+            text-align: center;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+
+        .page-header {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .page-title i {
+            color: #667eea;
+        }
+
+        .page-description {
+            color: #64748b;
+            font-size: 1.1rem;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1a202c;
+            margin-left: 0.75rem;
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: white;
+        }
+
+        .card-icon.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .card-icon.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .card-icon.warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+
+        .card-icon.danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .output {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .output.success {
+            border-color: #10b981;
+            background: #f0fdf4;
+            color: #065f46;
+        }
+
+        .output.error {
+            border-color: #ef4444;
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .module-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .module-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .module-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .module-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .module-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            gap: 0.25rem;
+        }
+
+        .status-enabled {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-disabled {
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .status-system {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .module-info {
+            margin-bottom: 1rem;
+        }
+
+        .module-info p {
+            margin-bottom: 0.5rem;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        .module-info strong {
+            color: #1a202c;
+        }
+
+        .module-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .loading {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #667eea;
+        }
+
+        /* Tables */
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .users-table th,
+        .users-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .users-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .users-table tr:hover {
+            background: #f8fafc;
+        }
+
+        /* Cards */
+        .role-card,
+        .organization-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .role-header,
+        .org-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .role-type {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .role-type.system {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .role-type.custom {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .permissions-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .permission-tag {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        .role-actions,
+        .org-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Settings styles */
+        .settings-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .settings-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .settings-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+        }
+
+        .settings-header h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .settings-header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 0.9rem;
+        }
+
+        .settings-content {
+            padding: 1.5rem;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info-item strong {
+            color: #2d3748;
+            font-weight: 600;
+        }
+
+        .info-item span {
+            color: #4a5568;
+        }
+
+        /* Модальные окна */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #1f2937;
+        }
+
+        .close {
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .close:hover {
+            color: #374151;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .permissions-checkbox-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .permission-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .permission-checkbox:hover {
+            background-color: #f8fafc;
+        }
+
+        .permission-checkbox input[type="checkbox"] {
+            margin-right: 0.75rem;
+            transform: scale(1.1);
+        }
+
+        .permission-checkbox label {
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .permission-name {
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .permission-description {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .permission-preview {
+            padding: 1rem;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+        }
+
+        .permission-name-preview {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            color: #374151;
+            font-size: 1rem;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e2e8f0;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 1rem;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .module-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <i class="fas fa-cube"></i>
+                    </div>
+                    <span>Loginus</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" id="nav-micro-modules">
+                    <i class="fas fa-cogs"></i>
+                    Тест микромодулей
+                </a>
+                <a href="#" class="nav-item" id="nav-users">
+                    <i class="fas fa-users"></i>
+                    Пользователи
+                </a>
+                <a href="#" class="nav-item" id="nav-roles">
+                    <i class="fas fa-shield-alt"></i>
+                    Роли и права
+                </a>
+                <a href="#" class="nav-item" id="nav-organizations">
+                    <i class="fas fa-building"></i>
+                    Организации
+                </a>
+                <a href="#" class="nav-item" id="nav-settings">
+                    <i class="fas fa-cog"></i>
+                    Настройки
+                </a>
+            </nav>
+            
+            <!-- User Panel -->
+            <div class="user-panel" style="position: absolute; bottom: 0; left: 0; right: 0; padding: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                    <div id="userAvatar" style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(45deg, #ff6b6b, #ffa500); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.2rem;">SA</div>
+                    <div>
+                        <div id="userName" style="color: white; font-weight: 600;">Super Admin</div>
+                        <div id="userRole" style="color: rgba(255, 255, 255, 0.7); font-size: 0.9rem;">Супер-администратор</div>
+                    </div>
+                </div>
+                <button onclick="logout()" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.3s ease;">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Выйти
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="page-header">
+                <h1 class="page-title">
+                    <i class="fas fa-cogs"></i>
+                    Тест системы микромодулей
+                </h1>
+                <p class="page-description">
+                    Интерфейс для тестирования и управления микромодулями системы Loginus
+                </p>
+            </div>
+
+            <div class="content-grid">
+                <!-- API Testing Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon primary">
+                            <i class="fas fa-plug"></i>
+                        </div>
+                        <h3 class="card-title">Тестирование API</h3>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="checkApiAvailability()">
+                            <i class="fas fa-check-circle"></i>
+                            Проверить API
+                        </button>
+                        <button class="btn btn-secondary" onclick="getAllModules()">
+                            <i class="fas fa-list"></i>
+                            Все модули
+                        </button>
+                        <button class="btn btn-secondary" onclick="getEnabledModules()">
+                            <i class="fas fa-toggle-on"></i>
+                            Включенные
+                        </button>
+                    </div>
+                    <div id="apiOutput" class="output"></div>
+                </div>
+
+                <!-- Statistics Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon success">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <h3 class="card-title">Статистика</h3>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="getModuleStats()">
+                            <i class="fas fa-chart-line"></i>
+                            Получить статистику
+                        </button>
+                    </div>
+                    <div id="statsOutput" class="output"></div>
+                </div>
+            </div>
+
+            <!-- Modules Grid -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon warning">
+                        <i class="fas fa-puzzle-piece"></i>
+                    </div>
+                    <h3 class="card-title">Управление микромодулями</h3>
+                </div>
+                <div class="module-grid" id="modulesGrid">
+                    <!-- Модули будут загружены динамически -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальные окна -->
+    <!-- Модальное окно создания роли -->
+    <div id="createRoleModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Создание новой роли</h2>
+                <span class="close" onclick="closeCreateRoleModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="roleName">Название роли:</label>
+                    <input type="text" id="roleName" class="form-input" placeholder="Введите название роли">
+                </div>
+                <div class="form-group">
+                    <label for="roleDescription">Описание роли:</label>
+                    <textarea id="roleDescription" class="form-input" placeholder="Введите описание роли" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Выберите права для роли:</label>
+                    <div id="permissionsList" class="permissions-checkbox-list">
+                        <!-- Права будут загружены динамически -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCreateRoleModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="saveNewRole()">Создать роль</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно создания права -->
+    <div id="createPermissionModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Создание нового права</h2>
+                <span class="close" onclick="closeCreatePermissionModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="permissionResource">Ресурс:</label>
+                    <select id="permissionResource" class="form-input">
+                        <option value="">Выберите ресурс</option>
+                        <option value="users">Пользователи</option>
+                        <option value="organizations">Организации</option>
+                        <option value="teams">Команды</option>
+                        <option value="roles">Роли</option>
+                        <option value="permissions">Права</option>
+                        <option value="knowledge">База знаний</option>
+                        <option value="clients">Клиенты</option>
+                        <option value="support">Поддержка</option>
+                        <option value="settings">Настройки</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="permissionAction">Действие:</label>
+                    <select id="permissionAction" class="form-input">
+                        <option value="">Выберите действие</option>
+                        <option value="create">Создание</option>
+                        <option value="read">Просмотр</option>
+                        <option value="update">Редактирование</option>
+                        <option value="delete">Удаление</option>
+                        <option value="export">Экспорт</option>
+                        <option value="import">Импорт</option>
+                        <option value="approve">Одобрение</option>
+                        <option value="publish">Публикация</option>
+                        <option value="assign">Назначение</option>
+                        <option value="members">Управление участниками</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Предварительный просмотр:</label>
+                    <div id="permissionPreview" class="permission-preview">
+                        <span class="permission-name-preview">Название права появится здесь</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeCreatePermissionModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="saveNewPermission()">Создать право</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно редактирования роли -->
+    <div id="editRoleModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Редактирование роли</h2>
+                <span class="close" onclick="closeEditRoleModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editRoleName">Название роли:</label>
+                    <input type="text" id="editRoleName" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="editRoleDescription">Описание роли:</label>
+                    <textarea id="editRoleDescription" class="form-input" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Выберите права для роли:</label>
+                    <div id="editPermissionsList" class="permissions-checkbox-list">
+                        <!-- Права будут загружены динамически -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditRoleModal()">Отмена</button>
+                <button class="btn btn-primary" onclick="saveEditedRole()">Сохранить изменения</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+        
+        async function makeRequest(url, options = {}) {
+            try {
+                // Получаем токен из localStorage
+                const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+                console.log('🔑 Token from localStorage:', token ? 'Present' : 'Missing');
+                console.log('🔑 Token value:', token ? token.substring(0, 20) + '...' : 'null');
+                console.log('🌐 Making request to:', url);
+                
+                const headers = {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                };
+                
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+                
+                const response = await fetch(url, {
+                    headers,
+                    ...options
+                });
+                
+                console.log('📡 Response status:', response.status);
+                console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Error response:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('✅ Response data:', data);
+                return data;
+            } catch (error) {
+                console.error('❌ Request failed:', error);
+                throw error;
+            }
+        }
+
+        async function checkApiAvailability() {
+            const output = document.getElementById('apiOutput');
+            output.innerHTML = '<div class="loading"><div class="spinner"></div>Проверяем доступность API...</div>';
+            
+            try {
+                const result = await makeRequest(`${API_BASE}/micro-modules`);
+                output.innerHTML = `<div class="success">✅ API доступен!\n\nПолучено ${result.length} микромодулей:\n${JSON.stringify(result, null, 2)}</div>`;
+                output.className = 'output success';
+            } catch (error) {
+                output.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
+                output.className = 'output error';
+            }
+        }
+
+        async function getAllModules() {
+            const output = document.getElementById('apiOutput');
+            output.innerHTML = '<div class="loading"><div class="spinner"></div>Загружаем все микромодули...</div>';
+            
+            try {
+                const modules = await makeRequest(`${API_BASE}/micro-modules`);
+                output.innerHTML = `<div class="success">Найдено ${modules.length} микромодулей:\n${JSON.stringify(modules, null, 2)}</div>`;
+                output.className = 'output success';
+                
+                // Обновляем сетку модулей
+                updateModulesGrid(modules);
+            } catch (error) {
+                output.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
+                output.className = 'output error';
+            }
+        }
+
+        async function getEnabledModules() {
+            const output = document.getElementById('apiOutput');
+            output.innerHTML = '<div class="loading"><div class="spinner"></div>Загружаем включенные модули...</div>';
+            
+            try {
+                const modules = await makeRequest(`${API_BASE}/micro-modules/enabled`);
+                output.innerHTML = `<div class="success">Включено ${modules.length} модулей:\n${JSON.stringify(modules, null, 2)}</div>`;
+                output.className = 'output success';
+            } catch (error) {
+                output.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
+                output.className = 'output error';
+            }
+        }
+
+        async function getModuleStats() {
+            const output = document.getElementById('statsOutput');
+            output.innerHTML = '<div class="loading"><div class="spinner"></div>Загружаем статистику...</div>';
+            
+            try {
+                const stats = await makeRequest(`${API_BASE}/micro-modules/stats`);
+                output.innerHTML = `<div class="success">Статистика микромодулей:\n${JSON.stringify(stats, null, 2)}</div>`;
+                output.className = 'output success';
+            } catch (error) {
+                output.innerHTML = `<div class="error">❌ Ошибка: ${error.message}</div>`;
+                output.className = 'output error';
+            }
+        }
+
+        function updateModulesGrid(modules) {
+            const grid = document.getElementById('modulesGrid');
+            grid.innerHTML = '';
+            
+            modules.forEach(module => {
+                const card = document.createElement('div');
+                card.className = 'module-card';
+                
+                const statusClass = module.isEnabled ? 'status-enabled' : 'status-disabled';
+                const statusText = module.isEnabled ? 'Включен' : 'Отключен';
+                const systemStatus = module.isSystem ? ' (Системный)' : '';
+                
+                card.innerHTML = `
+                    <div class="module-header">
+                        <div class="module-name">${module.displayName || module.name}</div>
+                        <div class="module-status ${statusClass}">
+                            <i class="fas fa-${module.isEnabled ? 'check' : 'times'}"></i>
+                            ${statusText}${systemStatus}
+                        </div>
+                    </div>
+                    <div class="module-info">
+                        <p><strong>Версия:</strong> ${module.version}</p>
+                        <p><strong>Описание:</strong> ${module.description}</p>
+                        <p><strong>Права:</strong> ${module.permissions ? module.permissions.join(', ') : 'Нет'}</p>
+                    </div>
+                    <div class="module-actions">
+                        <button onclick="toggleModule('${module.name}', ${!module.isEnabled})" 
+                                class="btn btn-sm ${module.isEnabled ? 'btn-danger' : 'btn-success'}">
+                            <i class="fas fa-${module.isEnabled ? 'toggle-off' : 'toggle-on'}"></i>
+                            ${module.isEnabled ? 'Отключить' : 'Включить'}
+                        </button>
+                        <button onclick="getModuleInfo('${module.name}')" class="btn btn-sm btn-secondary">
+                            <i class="fas fa-info-circle"></i>
+                            Подробнее
+                        </button>
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        async function toggleModule(moduleName, enable) {
+            try {
+                const action = enable ? 'enable' : 'disable';
+                const result = await makeRequest(`${API_BASE}/micro-modules/${moduleName}/${action}`, {
+                    method: 'POST'
+                });
+                
+                alert(`Модуль ${moduleName} ${enable ? 'включен' : 'отключен'}: ${result.message}`);
+                
+                // Обновляем список модулей
+                await getAllModules();
+            } catch (error) {
+                alert(`Ошибка: ${error.message}`);
+            }
+        }
+
+        async function getModuleInfo(moduleName) {
+            try {
+                const module = await makeRequest(`${API_BASE}/micro-modules/${moduleName}`);
+                alert(`Информация о модуле ${moduleName}:\n${JSON.stringify(module, null, 2)}`);
+            } catch (error) {
+                alert(`Ошибка: ${error.message}`);
+            }
+        }
+
+        // Logout function
+        function logout() {
+            console.log('🚪 Logging out...');
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('authToken'); // Дополнительно очищаем authToken
+            window.location.href = 'index.html';
+        }
+
+        // Initialize user info
+        async function initializeUser() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('authToken') || localStorage.getItem('accessToken')}`
+                    }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    document.getElementById('userName').textContent = user.firstName + ' ' + user.lastName;
+                    document.getElementById('userRole').textContent = user.roles?.[0]?.name || 'Пользователь';
+                    
+                    // Update avatar with initials
+                    const initials = (user.firstName?.[0] || '') + (user.lastName?.[0] || '');
+                    if (initials) {
+                        document.getElementById('userAvatar').textContent = initials;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading user info:', error);
+            }
+        }
+
+        // Флаг для предотвращения множественных перенаправлений
+        let isPageLoading = false;
+
+        // Setup navigation event handlers
+        function setupNavigationHandlers() {
+            console.log('🔗 Setting up navigation handlers...');
+            
+            const navMicroModules = document.getElementById('nav-micro-modules');
+            const navUsers = document.getElementById('nav-users');
+            const navRoles = document.getElementById('nav-roles');
+            const navOrganizations = document.getElementById('nav-organizations');
+            const navSettings = document.getElementById('nav-settings');
+            
+            if (navMicroModules) {
+                navMicroModules.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('🔧 Micro-modules clicked');
+                    showMicroModules();
+                });
+            }
+            
+            if (navUsers) {
+                navUsers.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('👥 Users clicked');
+                    showUsers();
+                });
+            }
+            
+            if (navRoles) {
+                navRoles.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('🛡️ Roles clicked');
+                    showRoles();
+                });
+            }
+            
+            if (navOrganizations) {
+                navOrganizations.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('🏢 Organizations clicked');
+                    showOrganizations();
+                });
+            }
+            
+            if (navSettings) {
+                navSettings.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    console.log('⚙️ Settings clicked');
+                    showSettings();
+                });
+            }
+            
+            console.log('✅ Navigation handlers setup complete');
+        }
+
+        // Navigation functions
+        function showMicroModules() {
+            console.log('🔧 Showing micro-modules - function called');
+            alert('Тест микромодулей - функция работает!');
+            // Уже на странице микромодулей, ничего не делаем
+        }
+
+        function showUsers() {
+            console.log('👥 Showing users - function called');
+            // Показываем страницу управления пользователями
+            showUsersPage();
+        }
+
+        function showRoles() {
+            console.log('🛡️ Showing roles - function called');
+            // Показываем страницу управления ролями и правами
+            showRolesPage();
+        }
+
+        function showOrganizations() {
+            console.log('🏢 Showing organizations - function called');
+            // Показываем страницу управления организациями
+            showOrganizationsPage();
+        }
+
+        function showSettings() {
+            console.log('⚙️ Showing settings - function called');
+            // Показываем страницу настроек
+            showSettingsPage();
+        }
+
+        // Page display functions
+        function showUsersPage() {
+            console.log('👥 Loading users page...');
+            // Создаем контент для управления пользователями
+            const mainContent = document.querySelector('.main-content');
+            mainContent.innerHTML = `
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <i class="fas fa-users"></i>
+                        Управление пользователями
+                    </h1>
+                    <p class="page-description">Просмотр и управление всеми пользователями системы</p>
+                </div>
+                
+                <div class="content-section">
+                    <div class="section-header">
+                        <h2>Список пользователей</h2>
+                        <button class="btn btn-primary" onclick="refreshUsers()">
+                            <i class="fas fa-sync-alt"></i>
+                            Обновить
+                        </button>
+                    </div>
+                    
+                    <div class="users-table-container">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Имя</th>
+                                    <th>Роли</th>
+                                    <th>Организации</th>
+                                    <th>Команды</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <tr>
+                                    <td colspan="6" class="loading">Загрузка пользователей...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            // Загружаем пользователей
+            loadUsers();
+        }
+
+        function showRolesPage() {
+            console.log('🛡️ Loading roles page...');
+            const mainContent = document.querySelector('.main-content');
+            mainContent.innerHTML = `
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <i class="fas fa-shield-alt"></i>
+                        Управление ролями и правами
+                    </h1>
+                    <p class="page-description">Настройка ролей, прав и создание кастомных ролей</p>
+                </div>
+                
+                <div class="content-section">
+                    <div class="section-header">
+                        <h2>Системные роли</h2>
+                        <div class="button-group">
+                            <button class="btn btn-primary" onclick="createCustomRole()">
+                                <i class="fas fa-plus"></i>
+                                Создать роль
+                            </button>
+                            <button class="btn btn-secondary" onclick="createCustomPermission()">
+                                <i class="fas fa-key"></i>
+                                Создать право
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="roles-grid" id="rolesGrid">
+                        <div class="loading">Загрузка ролей...</div>
+                    </div>
+                </div>
+            `;
+            
+            loadRoles();
+        }
+
+        function showOrganizationsPage() {
+            console.log('🏢 Loading organizations page...');
+            const mainContent = document.querySelector('.main-content');
+            mainContent.innerHTML = `
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <i class="fas fa-building"></i>
+                        Управление организациями
+                    </h1>
+                    <p class="page-description">Просмотр всех организаций, их создателей и сотрудников</p>
+                </div>
+                
+                <div class="content-section">
+                    <div class="section-header">
+                        <h2>Список организаций</h2>
+                        <button class="btn btn-primary" onclick="refreshOrganizations()">
+                            <i class="fas fa-sync-alt"></i>
+                            Обновить
+                        </button>
+                    </div>
+                    
+                    <div class="organizations-grid" id="organizationsGrid">
+                        <div class="loading">Загрузка организаций...</div>
+                    </div>
+                </div>
+            `;
+            
+            loadOrganizations();
+        }
+
+        function showSettingsPage() {
+            console.log('⚙️ Loading settings page...');
+            const mainContent = document.querySelector('.main-content');
+            mainContent.innerHTML = `
+                <div class="page-header">
+                    <h1 class="page-title">
+                        <i class="fas fa-cog"></i>
+                        Настройки системы
+                    </h1>
+                    <p class="page-description">Управление настройками системы и ролями по умолчанию</p>
+                </div>
+                
+                <div class="settings-container">
+                    <div class="settings-card">
+                        <div class="settings-header">
+                            <h3><i class="fas fa-user-plus"></i> Роль по умолчанию для новых пользователей</h3>
+                            <p>Выберите глобальную роль (admin или viewer), которая будет автоматически назначаться новым пользователям при регистрации</p>
+                        </div>
+                        
+                        <div class="settings-content">
+                            <div class="form-group">
+                                <label for="defaultRoleSelect">Роль по умолчанию:</label>
+                                <select id="defaultRoleSelect" class="form-control">
+                                    <option value="">Загрузка ролей...</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-actions">
+                                <button id="saveDefaultRole" class="btn btn-primary">
+                                    <i class="fas fa-save"></i>
+                                    Сохранить настройки
+                                </button>
+                                <button id="refreshSettings" class="btn btn-secondary">
+                                    <i class="fas fa-refresh"></i>
+                                    Обновить
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-card">
+                        <div class="settings-header">
+                            <h3><i class="fas fa-info-circle"></i> Информация о настройках</h3>
+                        </div>
+                        
+                        <div class="settings-content">
+                            <div class="info-item">
+                                <strong>Текущая роль по умолчанию:</strong>
+                                <span id="currentDefaultRole">Загрузка...</span>
+                            </div>
+                            <div class="info-item">
+                                <strong>Влияние:</strong>
+                                <span>Все новые пользователи (кроме первого) получат выбранную глобальную роль при регистрации</span>
+                            </div>
+                            <div class="info-item">
+                                <strong>Доступные роли:</strong>
+                                <span>admin (администратор) или viewer (пользователь) - только глобальные роли</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Загружаем настройки
+            loadSettings();
+        }
+
+        // Settings functions
+        function loadSettings() {
+            console.log('⚙️ Loading settings...');
+            
+            // Загружаем текущую роль по умолчанию
+            loadCurrentDefaultRole();
+            
+            // Загружаем список ролей для выбора
+            loadRolesForSettings();
+            
+            // Настраиваем обработчики
+            setupSettingsHandlers();
+        }
+        
+        async function loadCurrentDefaultRole() {
+            console.log('📋 Loading current default role...');
+            try {
+                const token = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                if (!token) {
+                    console.error('❌ No token for current role');
+                    const currentRoleSpan = document.getElementById('currentDefaultRole');
+                    if (currentRoleSpan) {
+                        currentRoleSpan.textContent = 'Нет токена';
+                    }
+                    return;
+                }
+                
+                const response = await fetch(`${API_BASE}/settings/default-user-role`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('📋 Current default role:', data);
+                const currentRoleSpan = document.getElementById('currentDefaultRole');
+                if (currentRoleSpan) {
+                    currentRoleSpan.textContent = data.defaultUserRole || 'Не установлена';
+                }
+                
+                // Также устанавливаем выбранное значение в select
+                const select = document.getElementById('defaultRoleSelect');
+                console.log('📋 Select element found:', !!select);
+                console.log('📋 Default role from API:', data.defaultUserRole);
+                if (select && data.defaultUserRole) {
+                    select.value = data.defaultUserRole;
+                    console.log('📋 Set select value to:', data.defaultUserRole);
+                    console.log('📋 Select value after setting:', select.value);
+                } else {
+                    console.log('📋 Cannot set select value - missing element or role');
+                }
+            } catch (error) {
+                console.error('❌ Error loading current default role:', error);
+                const currentRoleSpan = document.getElementById('currentDefaultRole');
+                if (currentRoleSpan) {
+                    currentRoleSpan.textContent = 'Ошибка загрузки';
+                }
+            }
+        }
+        
+        async function loadRolesForSettings() {
+            console.log('🛡️ Loading roles for settings...');
+            console.log('🛡️ API_BASE:', API_BASE);
+            console.log('🛡️ Full URL:', `${API_BASE}/roles`);
+            
+            try {
+                // Получаем токен напрямую
+                const token = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                console.log('🔑 Token for roles:', token ? 'Present' : 'Missing');
+                console.log('🔑 Token length:', token ? token.length : 0);
+                
+                if (!token) {
+                    console.error('❌ No token found');
+                    const select = document.getElementById('defaultRoleSelect');
+                    if (select) {
+                        select.innerHTML = '<option value="">Нет токена авторизации</option>';
+                    }
+                    return;
+                }
+                
+                console.log('🛡️ Making direct fetch request...');
+                const response = await fetch(`${API_BASE}/roles/for-settings`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('🛡️ Fetch completed, status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('🛡️ Response received:', !!data);
+                console.log('🛡️ Response size:', JSON.stringify(data).length, 'characters');
+                console.log('🛡️ Available roles:', data);
+                console.log('🛡️ Total roles count:', data.length);
+                console.log('🛡️ Response type:', typeof data);
+                console.log('🛡️ Is array:', Array.isArray(data));
+                
+                const select = document.getElementById('defaultRoleSelect');
+                console.log('🛡️ Select element found:', !!select);
+                
+                if (select) {
+                    select.innerHTML = '<option value="">Выберите роль...</option>';
+                    console.log('🛡️ Starting role filtering...');
+                    
+                    // Фильтруем только глобальные роли (admin и viewer)
+                    const globalRoles = data.filter(role => {
+                        console.log(`🔍 Checking role: ${role.name}, isGlobal: ${role.isGlobal}`);
+                        return role.isGlobal === true && 
+                               (role.name === 'admin' || role.name === 'viewer');
+                    });
+                    console.log('🌍 Global roles for default:', globalRoles);
+                    console.log('🌍 Global roles count:', globalRoles.length);
+                    
+                    if (globalRoles.length === 0) {
+                        select.innerHTML = '<option value="">Нет доступных глобальных ролей</option>';
+                        console.log('⚠️ No global roles found');
+                    } else {
+                        console.log('🛡️ Adding role options...');
+                        globalRoles.forEach(role => {
+                            const option = document.createElement('option');
+                            option.value = role.name;
+                            option.textContent = role.name;
+                            select.appendChild(option);
+                            console.log(`✅ Added role option: ${role.name}`);
+                        });
+                        console.log('🛡️ Role options added successfully');
+                    }
+                } else {
+                    console.error('❌ Select element not found!');
+                }
+            } catch (error) {
+                console.error('❌ Error loading roles:', error);
+                console.error('❌ Error details:', error.message);
+                console.error('❌ Error stack:', error.stack);
+                const select = document.getElementById('defaultRoleSelect');
+                if (select) {
+                    select.innerHTML = '<option value="">Ошибка загрузки ролей</option>';
+                }
+            }
+        }
+        
+        function setupSettingsHandlers() {
+            const saveButton = document.getElementById('saveDefaultRole');
+            const refreshButton = document.getElementById('refreshSettings');
+            
+            if (saveButton) {
+                saveButton.addEventListener('click', saveDefaultRole);
+            }
+            
+            if (refreshButton) {
+                refreshButton.addEventListener('click', loadSettings);
+            }
+        }
+        
+        async function saveDefaultRole() {
+            console.log('💾 Saving default role...');
+            const select = document.getElementById('defaultRoleSelect');
+            const selectedRole = select.value;
+            
+            if (!selectedRole) {
+                alert('Пожалуйста, выберите роль');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                if (!token) {
+                    console.error('❌ No token for saving role');
+                    alert('Нет токена авторизации');
+                    return;
+                }
+                
+                const data = { roleName: selectedRole };
+                const response = await fetch(`${API_BASE}/settings/default-user-role`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('💾 Save result:', result);
+                console.log('💾 Selected role:', selectedRole);
+                alert('Настройки успешно сохранены!');
+                
+                // Обновляем отображение
+                console.log('🔄 Reloading current role...');
+                await loadCurrentDefaultRole();
+                console.log('🔄 Current role reloaded');
+            } catch (error) {
+                console.error('❌ Error saving default role:', error);
+                alert('Ошибка при сохранении настроек: ' + error.message);
+            }
+        }
+
+        // Button handlers
+        function refreshUsers() {
+            console.log('🔄 Refreshing users...');
+            loadUsers();
+        }
+
+        function editUser(userId) {
+            console.log('✏️ Editing user:', userId);
+            
+            // Загружаем данные пользователя
+            makeRequest(`${API_BASE}/users/${userId}`)
+            .then(user => {
+                console.log('👤 User data:', user);
+                
+                // Загружаем все роли
+                makeRequest(`${API_BASE}/roles`)
+                .then(roles => {
+                    console.log('🛡️ Available roles:', roles);
+                    
+                    // Создаем модальное окно для редактирования
+                    const modal = document.createElement('div');
+                    modal.className = 'modal';
+                    modal.style.display = 'flex';
+                    modal.innerHTML = `
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h2>Редактирование пользователя</h2>
+                                <span class="close" onclick="this.closest('.modal').remove()">&times;</span>
+                            </div>
+                            <div class="modal-body">
+                                <div class="form-group">
+                                    <label>Email:</label>
+                                    <input type="text" value="${user.email}" disabled class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Имя:</label>
+                                    <input type="text" value="${user.firstName || ''}" disabled class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Фамилия:</label>
+                                    <input type="text" value="${user.lastName || ''}" disabled class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Текущая роль:</label>
+                                    <input type="text" value="${user.userRoleAssignments && user.userRoleAssignments.length > 0 ? user.userRoleAssignments.map(a => a.role ? a.role.name : 'N/A').join(', ') : 'Нет ролей'}" disabled class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>Новая роль:</label>
+                                    <select id="newRoleSelect" class="form-input">
+                                        <option value="">Выберите роль</option>
+                                        ${roles.map(role => `<option value="${role.id}">${role.name} - ${role.description}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Отмена</button>
+                                <button class="btn btn-primary" onclick="saveUserRole('${userId}')">Сохранить</button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.body.appendChild(modal);
+                })
+                .catch(error => {
+                    console.error('❌ Error loading roles:', error);
+                    alert('Ошибка при загрузке ролей: ' + error.message);
+                });
+            })
+            .catch(error => {
+                console.error('❌ Error loading user:', error);
+                alert('Ошибка при загрузке пользователя: ' + error.message);
+            });
+        }
+
+        function saveUserRole(userId) {
+            const newRoleId = document.getElementById('newRoleSelect').value;
+            
+            if (!newRoleId) {
+                alert('Выберите роль');
+                return;
+            }
+            
+            console.log('💾 Saving user role:', userId, newRoleId);
+            
+            makeRequest(`${API_BASE}/users/${userId}/change-role`, {
+                method: 'PATCH',
+                body: JSON.stringify({ roleId: newRoleId })
+            })
+            .then(response => {
+                console.log('✅ User role updated:', response);
+                alert('Роль пользователя успешно изменена!');
+                document.querySelector('.modal').remove();
+                loadUsers();
+            })
+            .catch(error => {
+                console.error('❌ Error updating user role:', error);
+                alert('Ошибка при изменении роли: ' + error.message);
+            });
+        }
+
+        function deleteUser(userId) {
+            console.log('🗑️ Deleting user:', userId);
+            
+            if (confirm('Вы уверены, что хотите удалить этого пользователя? Это действие нельзя отменить!')) {
+                makeRequest(`${API_BASE}/users/${userId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    console.log('✅ User deleted:', response);
+                    alert('Пользователь успешно удален!');
+                    loadUsers();
+                })
+                .catch(error => {
+                    console.error('❌ Error deleting user:', error);
+                    alert('Ошибка при удалении пользователя: ' + error.message);
+                });
+            }
+        }
+
+        function createCustomRole() {
+            console.log('➕ Creating custom role...');
+            loadPermissionsForModal('permissionsList');
+            document.getElementById('createRoleModal').style.display = 'flex';
+        }
+
+        function closeCreateRoleModal() {
+            document.getElementById('createRoleModal').style.display = 'none';
+        }
+
+        function saveNewRole() {
+            const roleName = document.getElementById('roleName').value;
+            const roleDescription = document.getElementById('roleDescription').value;
+            
+            console.log('📝 Role name:', roleName);
+            console.log('📝 Role description:', roleDescription);
+            
+            if (!roleName) {
+                alert('Введите название роли');
+                return;
+            }
+
+            // Проверяем, что название содержит только латинские буквы, цифры и подчеркивания
+            if (!/^[a-zA-Z0-9_]+$/.test(roleName)) {
+                alert('Название роли может содержать только латинские буквы, цифры и подчеркивания');
+                return;
+            }
+
+            // Получаем выбранные права
+            const selectedPermissions = [];
+            const checkboxes = document.querySelectorAll('#permissionsList input[type="checkbox"]:checked');
+            checkboxes.forEach(checkbox => {
+                selectedPermissions.push(checkbox.value);
+            });
+
+            console.log('📝 Selected permissions:', selectedPermissions);
+
+            const roleData = {
+                name: roleName,
+                description: roleDescription,
+                isSystem: false,
+                isGlobal: true,
+                permissionIds: selectedPermissions
+            };
+
+            console.log('📤 Sending role data:', roleData);
+
+            makeRequest(`${API_BASE}/roles`, {
+                method: 'POST',
+                body: JSON.stringify(roleData)
+            })
+            .then(response => {
+                console.log('✅ Role created:', response);
+                alert('Роль успешно создана!');
+                closeCreateRoleModal();
+                loadRoles();
+            })
+            .catch(error => {
+                console.error('❌ Error creating role:', error);
+                alert('Ошибка при создании роли: ' + error.message);
+            });
+        }
+
+        function editRole(roleId) {
+            console.log('✏️ Editing role:', roleId);
+            currentEditingRoleId = roleId;
+            
+            // Загружаем данные роли
+            makeRequest(`${API_BASE}/roles/${roleId}`)
+            .then(role => {
+                document.getElementById('editRoleName').value = role.name || '';
+                document.getElementById('editRoleDescription').value = role.description || '';
+                
+                // Загружаем права и отмечаем уже прикрепленные
+                loadPermissionsForEditModal('editPermissionsList', role.permissions || []);
+                document.getElementById('editRoleModal').style.display = 'flex';
+            })
+            .catch(error => {
+                console.error('❌ Error loading role:', error);
+                alert('Ошибка при загрузке роли: ' + error.message);
+            });
+        }
+
+        let currentEditingRoleId = null;
+
+        function closeEditRoleModal() {
+            document.getElementById('editRoleModal').style.display = 'none';
+            currentEditingRoleId = null;
+        }
+
+        function saveEditedRole() {
+            if (!currentEditingRoleId) return;
+
+            const roleName = document.getElementById('editRoleName').value;
+            const roleDescription = document.getElementById('editRoleDescription').value;
+            
+            if (!roleName) {
+                alert('Введите название роли');
+                return;
+            }
+
+            // Получаем выбранные права
+            const selectedPermissions = [];
+            const checkboxes = document.querySelectorAll('#editPermissionsList input[type="checkbox"]:checked');
+            checkboxes.forEach(checkbox => {
+                selectedPermissions.push(checkbox.value);
+            });
+
+            // Сначала обновляем данные роли
+            const updateData = {
+                name: roleName,
+                description: roleDescription
+            };
+
+            makeRequest(`${API_BASE}/roles/${currentEditingRoleId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(updateData)
+            })
+            .then(response => {
+                console.log('✅ Role updated:', response);
+                
+                // Затем обновляем права роли
+                return makeRequest(`${API_BASE}/roles/${currentEditingRoleId}/permissions`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ permissionIds: selectedPermissions })
+                });
+            })
+            .then(response => {
+                console.log('✅ Role permissions updated:', response);
+                alert('Роль успешно обновлена!');
+                closeEditRoleModal();
+                loadRoles();
+            })
+            .catch(error => {
+                console.error('❌ Error updating role:', error);
+                alert('Ошибка при обновлении роли: ' + error.message);
+            });
+        }
+
+        function deleteRole(roleId) {
+            console.log('🗑️ Deleting role:', roleId);
+            if (confirm('Вы уверены, что хотите удалить эту роль?')) {
+                makeRequest(`${API_BASE}/roles/${roleId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    console.log('✅ Role deleted:', response);
+                    alert('Роль успешно удалена!');
+                    loadRoles(); // Перезагружаем список ролей
+                })
+                .catch(error => {
+                    console.error('❌ Error deleting role:', error);
+                    alert('Ошибка при удалении роли: ' + error.message);
+                });
+            }
+        }
+
+        function createCustomPermission() {
+            console.log('➕ Creating custom permission...');
+            document.getElementById('createPermissionModal').style.display = 'flex';
+            
+            // Добавляем обработчики для предварительного просмотра
+            document.getElementById('permissionResource').addEventListener('change', updatePermissionPreview);
+            document.getElementById('permissionAction').addEventListener('change', updatePermissionPreview);
+        }
+
+        function updatePermissionPreview() {
+            const resource = document.getElementById('permissionResource').value;
+            const action = document.getElementById('permissionAction').value;
+            
+            if (resource && action) {
+                const permissionName = `${resource}.${action}`;
+                document.querySelector('.permission-name-preview').textContent = permissionName;
+            } else {
+                document.querySelector('.permission-name-preview').textContent = 'Название права появится здесь';
+            }
+        }
+
+        function closeCreatePermissionModal() {
+            document.getElementById('createPermissionModal').style.display = 'none';
+            
+            // Очищаем поля
+            document.getElementById('permissionResource').value = '';
+            document.getElementById('permissionAction').value = '';
+            document.querySelector('.permission-name-preview').textContent = 'Название права появится здесь';
+        }
+
+        function saveNewPermission() {
+            const resource = document.getElementById('permissionResource').value;
+            const action = document.getElementById('permissionAction').value;
+            
+            if (!resource || !action) {
+                alert('Выберите ресурс и действие');
+                return;
+            }
+
+            const permissionName = `${resource}.${action}`;
+            const permissionDescription = `Право на ${action} для ${resource}`;
+
+            const permissionData = {
+                name: permissionName,
+                description: permissionDescription,
+                resource: resource,
+                action: action
+            };
+
+            console.log('📤 Sending permission data:', permissionData);
+
+            makeRequest(`${API_BASE}/permissions`, {
+                method: 'POST',
+                body: JSON.stringify(permissionData)
+            })
+            .then(response => {
+                console.log('✅ Permission created:', response);
+                alert('Право успешно создано!');
+                closeCreatePermissionModal();
+                loadRoles();
+            })
+            .catch(error => {
+                console.error('❌ Error creating permission:', error);
+                alert('Ошибка при создании права: ' + error.message);
+            });
+        }
+
+        function refreshOrganizations() {
+            console.log('🔄 Refreshing organizations...');
+            loadOrganizations();
+        }
+
+        function viewOrganization(orgId) {
+            console.log('👁️ Viewing organization:', orgId);
+            alert(`Просмотр организации ${orgId} - функция в разработке`);
+        }
+
+        function editOrganization(orgId) {
+            console.log('✏️ Editing organization:', orgId);
+            alert(`Редактирование организации ${orgId} - функция в разработке`);
+        }
+
+        // Функции для работы с модальными окнами
+        async function loadPermissionsForModal(containerId) {
+            try {
+                const permissions = await makeRequest(`${API_BASE}/permissions`);
+                const container = document.getElementById(containerId);
+                
+                container.innerHTML = permissions.map(permission => `
+                    <div class="permission-checkbox">
+                        <input type="checkbox" id="perm_${permission.id}" value="${permission.id}">
+                        <label for="perm_${permission.id}">
+                            <div class="permission-name">${permission.name}</div>
+                            <div class="permission-description">${permission.description || 'Нет описания'}</div>
+                        </label>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('❌ Error loading permissions:', error);
+                document.getElementById(containerId).innerHTML = '<div class="error">Ошибка загрузки прав</div>';
+            }
+        }
+
+        async function loadPermissionsForEditModal(containerId, currentPermissions) {
+            try {
+                const permissions = await makeRequest(`${API_BASE}/permissions`);
+                const container = document.getElementById(containerId);
+                
+                // Создаем массив ID текущих прав
+                const currentPermissionIds = currentPermissions.map(p => p.id || p);
+                
+                container.innerHTML = permissions.map(permission => {
+                    const isChecked = currentPermissionIds.includes(permission.id);
+                    return `
+                        <div class="permission-checkbox">
+                            <input type="checkbox" id="edit_perm_${permission.id}" value="${permission.id}" ${isChecked ? 'checked' : ''}>
+                            <label for="edit_perm_${permission.id}">
+                                <div class="permission-name">${permission.name}</div>
+                                <div class="permission-description">${permission.description || 'Нет описания'}</div>
+                            </label>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('❌ Error loading permissions:', error);
+                document.getElementById(containerId).innerHTML = '<div class="error">Ошибка загрузки прав</div>';
+            }
+        }
+
+        // Data loading functions
+        async function loadUsers() {
+            try {
+                console.log('👥 Loading users...');
+                console.log('🔑 Current token:', localStorage.getItem('accessToken') || localStorage.getItem('authToken'));
+                const response = await makeRequest(`${API_BASE}/users`);
+                console.log('👥 Users loaded:', response);
+                
+                const tbody = document.getElementById('usersTableBody');
+                if (!tbody) return;
+                
+                // API возвращает объект с полем users
+                const users = response.users || response;
+                
+                if (users && users.length > 0) {
+                    tbody.innerHTML = users.map(user => `
+                        <tr>
+                            <td>${user.email || 'N/A'}</td>
+                            <td>${(user.firstName || '') + ' ' + (user.lastName || '') || 'N/A'}</td>
+                            <td>${user.userRoleAssignments && user.userRoleAssignments.length > 0 ? user.userRoleAssignments.map(assignment => assignment.role ? assignment.role.name : 'N/A').join(', ') : 'Нет ролей'}</td>
+                            <td>${user.organizations ? user.organizations.map(org => org.name).join(', ') : 'Нет организаций'}</td>
+                            <td>${user.teams ? user.teams.map(team => team.name).join(', ') : 'Нет команд'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="editUser('${user.id}')">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteUser('${user.id}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center">Пользователи не найдены</td></tr>';
+                }
+            } catch (error) {
+                console.error('❌ Error loading users:', error);
+                const tbody = document.getElementById('usersTableBody');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="error">Ошибка загрузки пользователей</td></tr>';
+                }
+            }
+        }
+
+        async function loadRoles() {
+            try {
+                console.log('🛡️ Loading roles...');
+                console.log('🔑 Current token:', localStorage.getItem('accessToken') || localStorage.getItem('authToken'));
+                const response = await makeRequest(`${API_BASE}/roles`);
+                console.log('🛡️ Roles loaded:', response);
+                
+                const grid = document.getElementById('rolesGrid');
+                if (!grid) return;
+                
+                if (response && response.length > 0) {
+                    grid.innerHTML = response.map(role => `
+                        <div class="role-card">
+                            <div class="role-header">
+                                <h3>${role.name || 'N/A'}</h3>
+                                <span class="role-type ${role.isSystem ? 'system' : 'custom'}">
+                                    ${role.isSystem ? 'Системная' : 'Кастомная'}
+                                </span>
+                            </div>
+                            <p class="role-description">${role.description || 'Нет описания'}</p>
+                            <div class="role-permissions">
+                                <h4>Права:</h4>
+                                <div class="permissions-list">
+                                    ${role.permissions && role.permissions.length > 0 ? 
+                                        role.permissions.map(perm => 
+                                            `<span class="permission-tag">${perm.name || perm}</span>`
+                                        ).join('') : 
+                                        '<span class="text-muted">Нет прав</span>'
+                                    }
+                                </div>
+                            </div>
+                            <div class="role-actions">
+                                <button class="btn btn-sm btn-primary" onclick="editRole('${role.id}')">
+                                    <i class="fas fa-edit"></i> Редактировать
+                                </button>
+                                ${!role.isSystem ? `
+                                    <button class="btn btn-sm btn-danger" onclick="deleteRole('${role.id}')">
+                                        <i class="fas fa-trash"></i> Удалить
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    grid.innerHTML = '<div class="text-center">Роли не найдены</div>';
+                }
+            } catch (error) {
+                console.error('❌ Error loading roles:', error);
+                const grid = document.getElementById('rolesGrid');
+                if (grid) {
+                    grid.innerHTML = '<div class="error">Ошибка загрузки ролей</div>';
+                }
+            }
+        }
+
+        async function loadOrganizations() {
+            try {
+                console.log('🏢 Loading organizations...');
+                console.log('🔑 Current token:', localStorage.getItem('accessToken') || localStorage.getItem('authToken'));
+                const response = await makeRequest(`${API_BASE}/organizations`);
+                console.log('🏢 Organizations loaded:', response);
+                
+                const grid = document.getElementById('organizationsGrid');
+                if (!grid) return;
+                
+                if (response && response.length > 0) {
+                    grid.innerHTML = response.map(org => `
+                        <div class="organization-card">
+                            <div class="org-header">
+                                <h3>${org.name}</h3>
+                                <span class="org-slug">${org.slug}</span>
+                            </div>
+                            <div class="org-info">
+                                <p><strong>Создатель:</strong> ${org.creator ? org.creator.firstName + ' ' + org.creator.lastName : 'Неизвестно'}</p>
+                                <p><strong>Сотрудников:</strong> ${org.members ? org.members.length : 0}</p>
+                                <p><strong>Команд:</strong> ${org.teams ? org.teams.length : 0}</p>
+                            </div>
+                            <div class="org-actions">
+                                <button class="btn btn-sm btn-primary" onclick="viewOrganization('${org.id}')">
+                                    <i class="fas fa-eye"></i> Просмотр
+                                </button>
+                                <button class="btn btn-sm btn-secondary" onclick="editOrganization('${org.id}')">
+                                    <i class="fas fa-edit"></i> Редактировать
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    grid.innerHTML = '<div class="text-center">Организации не найдены</div>';
+                }
+            } catch (error) {
+                console.error('❌ Error loading organizations:', error);
+                const grid = document.getElementById('organizationsGrid');
+                if (grid) {
+                    grid.innerHTML = '<div class="error">Ошибка загрузки организаций</div>';
+                }
+            }
+        }
+
+        // Автоматически загружаем модули при загрузке страницы
+        window.onload = function() {
+            // Предотвращаем множественные загрузки
+            if (isPageLoading) {
+                console.log('🚫 Page already loading, skipping');
+                return;
+            }
+            isPageLoading = true;
+            
+            // Проверяем токен
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
+            if (!token) {
+                console.error('❌ No token found, redirecting to login');
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            console.log('🔑 Access token found:', token.substring(0, 20) + '...');
+            console.log('🔍 Current page:', window.location.pathname);
+            console.log('✅ Super admin on micro-modules page');
+            
+            // Проверяем, что функции навигации определены
+            console.log('🔍 Navigation functions check:');
+            console.log('showMicroModules:', typeof showMicroModules);
+            console.log('showUsers:', typeof showUsers);
+            console.log('showRoles:', typeof showRoles);
+            console.log('showOrganizations:', typeof showOrganizations);
+            console.log('showTeams:', typeof showTeams);
+            
+            // Привязываем обработчики событий
+            setupNavigationHandlers();
+            
+            initializeUser();
+            getAllModules();
+        };
+    </script>
+</body>
+</html>

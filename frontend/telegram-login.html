@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход через Telegram - Loginus</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1a202c;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            padding: 3rem;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .logo-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+        }
+
+        .logo-text {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            color: #1a202c;
+        }
+
+        p {
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+
+        .telegram-widget-container {
+            margin: 2rem 0;
+        }
+
+        .back-button {
+            margin-top: 2rem;
+            padding: 0.75rem 2rem;
+            background: #f1f5f9;
+            border: none;
+            border-radius: 12px;
+            color: #475569;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .back-button:hover {
+            background: #e2e8f0;
+        }
+
+        .loading {
+            display: none;
+            padding: 1rem;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <div class="logo-icon">🚀</div>
+            <div class="logo-text">Loginus</div>
+        </div>
+
+        <h1>Вход через Telegram</h1>
+        <p>Нажмите кнопку ниже, чтобы войти через ваш Telegram аккаунт</p>
+
+        <div class="telegram-widget-container">
+            <script async src="https://telegram.org/js/telegram-widget.js?22" 
+                data-telegram-login="sdfisdhfksdf_bot" 
+                data-size="large" 
+                data-onauth="onTelegramAuth(user)" 
+                data-request-access="write">
+            </script>
+        </div>
+
+        <div class="loading" id="loading">
+            Обработка входа...
+        </div>
+
+        <button class="back-button" onclick="window.location.href='index.html'">
+            ← Назад
+        </button>
+    </div>
+
+    <script>
+        // Determine API base URL
+        const API_BASE = (() => {
+            const hostname = window.location.hostname;
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                return 'http://localhost:3001/api';
+            }
+            if (hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+                return `${window.location.protocol}//${window.location.hostname}:3001/api`;
+            }
+            return `${window.location.protocol}//${window.location.hostname}/api`;
+        })();
+
+        console.log('🌐 API_BASE:', API_BASE);
+
+        // Telegram login callback
+        async function onTelegramAuth(user) {
+            console.log('Telegram user data:', user);
+            document.getElementById('loading').style.display = 'block';
+            
+            // Check if this is a binding request
+            const urlParams = new URLSearchParams(window.location.search);
+            const bind = urlParams.get('bind');
+            const userId = urlParams.get('userId');
+            
+            let requestBody = user;
+            
+            if (bind === 'true' && userId) {
+                // This is a binding request
+                console.log('Binding request for user:', userId);
+                requestBody = {
+                    telegramUser: user,
+                    bind: true,
+                    userId: userId
+                };
+            }
+            
+            // Send request
+            try {
+                const response = await fetch(`${API_BASE}/auth/multi/telegram-login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                const data = await response.json();
+                console.log('Login response:', data);
+                
+                if (data.accessToken) {
+                    localStorage.setItem('authToken', data.accessToken);
+                    localStorage.setItem('accessToken', data.accessToken);
+                    if (data.refreshToken) {
+                        localStorage.setItem('refreshToken', data.refreshToken);
+                    }
+                    
+                    // Redirect to dashboard
+                    window.location.href = 'dashboard.html';
+                } else {
+                    alert('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+                    document.getElementById('loading').style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Ошибка входа: ' + error.message);
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+    </script>
+</body>
+</html>

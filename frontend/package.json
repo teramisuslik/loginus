@@ -1,0 +1,21 @@
+{
+  "name": "loginus-frontend",
+  "version": "1.0.0",
+  "description": "Простой frontend интерфейс для Loginus Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "frontend",
+    "loginus",
+    "authentication",
+    "password-reset"
+  ],
+  "author": "Loginus Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

@@ -1,0 +1,1 @@
+DELETE FROM users WHERE id = '98ade80e-9fd9-4781-84f2-e8e6b42b634c';

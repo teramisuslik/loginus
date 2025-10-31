@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Referral System</title>
+</head>
+<body>
+    <h1>Test Referral System</h1>
+    <div id="referralCard">
+        <h2>Реферальная система</h2>
+        <div id="referralStats">Loading...</div>
+        <button onclick="generateReferralCode()">Создать код</button>
+        <div id="referralCodes">Loading codes...</div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://vselena.ldmco.ru/api';
+        
+        async function apiCall(endpoint, options = {}) {
+            const token = localStorage.getItem('authToken');
+            const response = await fetch(API_BASE_URL + endpoint, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                },
+                ...options
+            });
+            return response.json();
+        }
+
+        async function loadReferralSystem() {
+            console.log('Loading referral system...');
+            try {
+                const response = await apiCall('/micro-modules');
+                console.log('Micro-modules response:', response);
+                const referralModule = response?.find(module => module.name === 'referral-system');
+                console.log('Referral module found:', referralModule);
+                const referralEnabled = referralModule?.isEnabled === true;
+                console.log('Referral enabled:', referralEnabled);
+                
+                if (referralEnabled) {
+                    await loadReferralStats();
+                    await loadReferralCodes();
+                }
+            } catch (error) {
+                console.error('Error loading referral system:', error);
+            }
+        }
+
+        async function loadReferralStats() {
+            try {
+                const response = await apiCall('/referral/stats');
+                const stats = response?.stats || { totalCodes: 0, usedCodes: 0, pendingCodes: 0, expiredCodes: 0 };
+                
+                const statsContainer = document.getElementById('referralStats');
+                if (statsContainer) {
+                    statsContainer.innerHTML = `
+                        <div>Всего кодов: ${stats.totalCodes}</div>
+                        <div>Использовано: ${stats.usedCodes}</div>
+                        <div>Ожидают: ${stats.pendingCodes}</div>
+                        <div>Истекли: ${stats.expiredCodes}</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading referral stats:', error);
+            }
+        }
+
+        async function loadReferralCodes() {
+            try {
+                const response = await apiCall('/referral/my-codes');
+                const codes = response?.codes || [];
+                
+                const codesContainer = document.getElementById('referralCodes');
+                if (codesContainer) {
+                    if (codes.length === 0) {
+                        codesContainer.innerHTML = '<p>У вас пока нет реферальных кодов</p>';
+                    } else {
+                        let html = '<h3>Мои реферальные коды</h3>';
+                        codes.forEach(code => {
+                            const status = code.isUsed ? 'used' : 
+                                         (code.expiresAt && new Date(code.expiresAt) < new Date()) ? 'expired' : 'pending';
+                            const statusText = code.isUsed ? 'Использован' : 
+                                             (code.expiresAt && new Date(code.expiresAt) < new Date()) ? 'Истек' : 'Активен';
+                            
+                            html += `
+                                <div>
+                                    <strong>${code.code}</strong> - ${statusText}
+                                    <br>Создан: ${new Date(code.createdAt).toLocaleDateString()}
+                                </div>
+                            `;
+                        });
+                        codesContainer.innerHTML = html;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading referral codes:', error);
+            }
+        }
+
+        async function generateReferralCode() {
+            try {
+                console.log('Generating referral code...');
+                const response = await apiCall('/referral/generate', {
+                    method: 'POST',
+                    body: JSON.stringify({ expiresInDays: 30 })
+                });
+                
+                if (response.success) {
+                    console.log('Referral code generated:', response.referral);
+                    await loadReferralStats();
+                    await loadReferralCodes();
+                } else {
+                    console.error('Error generating code:', response.message);
+                }
+            } catch (error) {
+                console.error('Error generating referral code:', error);
+            }
+        }
+
+        // Load referral system on page load
+        document.addEventListener('DOMContentLoaded', loadReferralSystem);
+    </script>
+</body>
+</html>
