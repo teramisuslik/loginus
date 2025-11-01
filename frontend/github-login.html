@@ -177,48 +177,59 @@
         console.log('🌐 API_BASE:', API_BASE);
 
         // Функция для смены аккаунта GitHub
-        function switchGitHubAccount() {
+        async function switchGitHubAccount() {
             const message = 'Для смены аккаунта GitHub:\n\n' +
-                          '1. Откройте новую вкладку в режиме инкогнито (Ctrl+Shift+N)\n' +
-                          '2. Или выйдите из аккаунта GitHub на github.com\n' +
-                          '3. Затем нажмите "ОК" для продолжения\n\n' +
+                          'Откроется страница выбора аккаунта GitHub.\n' +
+                          'Выберите аккаунт для выхода, затем войдите под нужным аккаунтом.\n\n' +
                           'Продолжить?';
             
             if (confirm(message)) {
-                console.log('🔄 Switching GitHub account - opening OAuth in new window with forceLogin=true...');
+                console.log('🔄 Switching GitHub account - opening account selection page...');
                 
-                // Открываем OAuth URL в новом окне для принудительного показа экрана выбора
-                (async () => {
-                    try {
-                        const response = await fetch(`${API_BASE}/auth/multi/oauth/github/url?forceLogin=true`);
-                        const data = await response.json();
-                        
-                        if (data.url) {
-                            // Открываем в новом окне
-                            const popup = window.open(data.url, 'github-oauth', 'width=800,height=600,scrollbars=yes,resizable=yes');
-                            
-                            if (!popup) {
-                                alert('Браузер заблокировал всплывающее окно. Пожалуйста, разрешите всплывающие окна для этого сайта.');
-                                // Fallback - редирект на той же странице
-                                window.location.href = data.url;
-                            } else {
-                                // Следим за закрытием окна
-                                const checkClosed = setInterval(() => {
-                                    if (popup.closed) {
-                                        clearInterval(checkClosed);
-                                        // Проверяем, получили ли мы токен (может быть в localStorage)
-                                        if (localStorage.getItem('authToken') || localStorage.getItem('accessToken')) {
-                                            window.location.href = 'dashboard.html';
-                                        }
-                                    }
-                                }, 500);
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error:', error);
-                        alert('Ошибка получения URL авторизации');
+                // Очищаем все данные перед сменой аккаунта
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('userData');
+                sessionStorage.clear();
+                
+                // Очищаем cookies, связанные с GitHub
+                document.cookie.split(";").forEach(function(c) { 
+                    const cookieName = c.split("=")[0].trim();
+                    if (cookieName.toLowerCase().includes('github') || 
+                        cookieName.toLowerCase().includes('gh_') || 
+                        cookieName.toLowerCase().startsWith('_gh') ||
+                        cookieName.toLowerCase().includes('oauth')) {
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.github.com";
                     }
-                })();
+                });
+                
+                try {
+                    // Получаем OAuth URL с forceLogin
+                    const response = await fetch(`${API_BASE}/auth/multi/oauth/github/url?forceLogin=true`);
+                    const data = await response.json();
+                    
+                    if (data.url) {
+                        const separator = data.url.includes('?') ? '&' : '?';
+                        const oauthUrl = data.url + separator + '_t=' + Date.now() + '&_r=' + Math.random().toString(36).substring(7);
+                        
+                        // Открываем страницу выбора аккаунта в той же вкладке
+                        const accountSelectionUrl = 'https://github.com/logout';
+                        
+                        console.log('🔐 Opening GitHub account selection page in same tab...');
+                        
+                        // Просто открываем страницу выбора аккаунта в той же вкладке
+                        // Пользователь сам выберет аккаунт для выхода и вернется обратно
+                        window.location.href = accountSelectionUrl;
+                    } else {
+                        alert('Ошибка получения URL авторизации: ' + (data.error || 'Неизвестная ошибка'));
+                    }
+                } catch (error) {
+                    console.error('❌ Error:', error);
+                    alert('Ошибка получения URL авторизации. Откройте https://github.com/logout вручную.');
+                }
             }
         }
         

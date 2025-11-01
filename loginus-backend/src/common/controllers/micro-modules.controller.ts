@@ -37,26 +37,26 @@ export class MicroModulesController {
     try {
       // Используем MicroModuleManagerService, который содержит зарегистрированные модули
       const modules = this.microModuleManager.getAllModules();
-      console.log('Found modules:', modules.length);
+    console.log('Found modules:', modules.length);
       console.log('Module names:', modules.map(m => m.name));
-      
-      // Получаем реальные статусы из базы данных
-      const moduleSettings = await this.microModuleSettingsService.getAllModuleSettings();
-      const settingsMap = new Map(moduleSettings.map(s => [s.moduleName, s.isEnabled]));
-      
-      // Возвращаем только нужные данные без циклических ссылок
+    
+    // Получаем реальные статусы из базы данных
+    const moduleSettings = await this.microModuleSettingsService.getAllModuleSettings();
+    const settingsMap = new Map(moduleSettings.map(s => [s.moduleName, s.isEnabled]));
+    
+    // Возвращаем только нужные данные без циклических ссылок
       const result = modules.map(module => ({
-        name: module.name,
-        version: module.version,
-        displayName: module.displayName,
-        description: module.description,
-        isEnabled: settingsMap.get(module.name) ?? module.isEnabled,
-        isSystem: module.isSystem,
-        dependencies: module.dependencies,
-        permissions: module.permissions,
-        priority: module.priority,
+      name: module.name,
+      version: module.version,
+      displayName: module.displayName,
+      description: module.description,
+      isEnabled: settingsMap.get(module.name) ?? module.isEnabled,
+      isSystem: module.isSystem,
+      dependencies: module.dependencies,
+      permissions: module.permissions,
+      priority: module.priority,
         authMethods: ('authMethods' in module) ? (module as AuthMicroModule).authMethods || [] : [],
-      }));
+    }));
       
       console.log('Returning', result.length, 'modules');
       return result;

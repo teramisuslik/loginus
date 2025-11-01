@@ -129,113 +129,200 @@
     <script>
         // Функция для смены аккаунта Telegram
         function switchTelegramAccount() {
-            const message = 'Для смены аккаунта Telegram:\n\n' +
-                          '1. Откройте новую вкладку в режиме инкогнито (Ctrl+Shift+N)\n' +
-                          '2. Или выйдите из Telegram Web на web.telegram.org\n' +
-                          '3. Затем нажмите "ОК" для продолжения\n\n' +
-                          'Продолжить?';
+            console.log('🔄 Switching Telegram account - forcing complete reset with page reload...');
             
-            if (confirm(message)) {
-                console.log('🔄 Switching Telegram account - clearing Telegram session data...');
-                
-                // Очищаем все данные, связанные с Telegram
-                localStorage.removeItem('telegram_auth');
-                localStorage.removeItem('telegram_user');
-                
-                // Очищаем cookies, связанные с Telegram (более агрессивная очистка)
-                document.cookie.split(";").forEach(function(c) { 
-                    const cookieName = c.split("=")[0].trim();
-                    if (cookieName.toLowerCase().includes('telegram') || cookieName.toLowerCase().includes('tg') || cookieName.toLowerCase().startsWith('t_')) {
-                        // Очищаем для всех возможных путей и доменов
-                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
-                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
-                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=." + window.location.hostname;
-                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.telegram.org";
-                        console.log('🗑️ Cleared Telegram cookie:', cookieName);
-                    }
-                });
-                
-                // Очищаем sessionStorage от данных Telegram
-                Object.keys(sessionStorage).forEach(key => {
-                    if (key.toLowerCase().includes('telegram') || key.toLowerCase().includes('tg')) {
-                        sessionStorage.removeItem(key);
-                        console.log('🗑️ Cleared sessionStorage:', key);
-                    }
-                });
-                
-                // Удаляем старый виджет полностью и перезагружаем страницу с forceLogin=true
-                // Это более надежный способ для Telegram
-                console.log('🔄 Reloading page with forceLogin=true for Telegram account switch...');
-                
-                // Удаляем виджет перед перезагрузкой
-                const widgetContainer = document.getElementById('telegram-widget-container');
-                if (widgetContainer) {
-                    widgetContainer.innerHTML = '';
+            // Агрессивная очистка всех данных перед перезагрузкой
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Очищаем ВСЕ cookies максимально агрессивно
+            const allCookies = document.cookie.split(";");
+            allCookies.forEach(function(c) {
+                const cookieName = c.split("=")[0].trim();
+                if (cookieName) {
+                    const domains = [
+                        window.location.hostname,
+                        '.' + window.location.hostname,
+                        '.telegram.org',
+                        '.oauth.telegram.org',
+                        'web.telegram.org',
+                        '.t.me'
+                    ];
+                    const paths = ['/', window.location.pathname];
+                    
+                    domains.forEach(domain => {
+                        paths.forEach(path => {
+                            document.cookie = `${cookieName}=;expires=${new Date(0).toUTCString()};path=${path};domain=${domain}`;
+                            document.cookie = `${cookieName}=;expires=${new Date(0).toUTCString()};path=${path}`;
+                        });
+                    });
                 }
-                
-                // Перезагружаем страницу с forceLogin
-                window.location.href = 'telegram-login.html?forceLogin=true&t=' + Date.now();
-            }
+            });
+            
+            // Создаем уникальные параметры для полного сброса
+            const uniqueTimestamp = Date.now();
+            const randomStr = Math.random().toString(36).substring(7);
+            const resetId = Math.random().toString(36).substring(7);
+            const forceReset = Math.random().toString(36).substring(7);
+            
+            // Перезагружаем страницу с параметрами принудительного сброса
+            // Это заставит Telegram виджет создать новую сессию
+            const resetUrl = window.location.origin + window.location.pathname + 
+                '?forceLogin=true' +
+                '&_account_reset=1' +
+                '&t=' + uniqueTimestamp +
+                '&_fresh=' + randomStr +
+                '&_reset=' + resetId +
+                '&_force_new=' + forceReset +
+                '&_widget_reset=' + Date.now() +
+                '&_clear_session=1';
+            
+            console.log('🔄 Reloading page with reset parameters:', resetUrl);
+            
+            // Перезагружаем страницу
+            window.location.href = resetUrl;
         }
         
-        // Делаем функцию глобальной
+        // Делаем функцию глобальной сразу, чтобы она была доступна для onclick
         window.switchTelegramAccount = switchTelegramAccount;
+        
+        // Также определяем глобально для совместимости
+        if (typeof switchTelegramAccount === 'function') {
+            window.addEventListener('DOMContentLoaded', function() {
+                window.switchTelegramAccount = switchTelegramAccount;
+            });
+        }
         
         // Проверяем, нужно ли принудительно показать выбор аккаунта
         const urlParams = new URLSearchParams(window.location.search);
         const forceLogin = urlParams.get('forceLogin') === 'true';
+        const widgetReset = urlParams.get('_widget_reset') === '1';
+        const accountReset = urlParams.get('_account_reset') === '1';
+        const clearSession = urlParams.get('_clear_session') === '1';
         
-        if (forceLogin) {
+        if (forceLogin || widgetReset || accountReset || clearSession) {
             console.log('🔄 Force login mode - clearing Telegram session data to show account selection...');
-            // Очищаем все данные, связанные с Telegram
+            
+            // Агрессивная очистка всех данных Telegram
             localStorage.removeItem('telegram_auth');
             localStorage.removeItem('telegram_user');
-            // Очищаем cookies, связанные с Telegram (все cookies, начинающиеся с telegram или tg)
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('userData');
+            
+            // Очищаем cookies, связанные с Telegram
             document.cookie.split(";").forEach(function(c) { 
                 const cookieName = c.split("=")[0].trim();
-                if (cookieName.toLowerCase().includes('telegram') || cookieName.toLowerCase().includes('tg') || cookieName.toLowerCase().startsWith('t_')) {
-                    // Очищаем cookie для всех возможных путей и доменов
-                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
-                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + window.location.hostname;
-                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=." + window.location.hostname;
-                    document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=.telegram.org";
+                if (cookieName.toLowerCase().includes('telegram') || 
+                    cookieName.toLowerCase().includes('tg') || 
+                    cookieName.toLowerCase().startsWith('t_') ||
+                    cookieName.toLowerCase().includes('widget') ||
+                    cookieName.toLowerCase().includes('auth') ||
+                    cookieName.toLowerCase().includes('session')) {
+                    // Очищаем для всех возможных путей и доменов
+                    const domains = [
+                        '',
+                        window.location.hostname,
+                        '.' + window.location.hostname,
+                        '.telegram.org',
+                        '.oauth.telegram.org',
+                        'web.telegram.org'
+                    ];
+                    domains.forEach(domain => {
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/;domain=" + (domain ? domain : window.location.hostname);
+                        document.cookie = cookieName + "=;expires=" + new Date(0).toUTCString() + ";path=/";
+                    });
                     console.log('🗑️ Cleared Telegram cookie:', cookieName);
                 }
             });
             
-            // Также очищаем sessionStorage от данных Telegram
-            Object.keys(sessionStorage).forEach(key => {
-                if (key.toLowerCase().includes('telegram') || key.toLowerCase().includes('tg')) {
-                    sessionStorage.removeItem(key);
-                    console.log('🗑️ Cleared sessionStorage:', key);
+            // Очищаем sessionStorage
+            sessionStorage.clear();
+            
+            // Убеждаемся, что контейнер существует и очищаем только его содержимое
+            const widgetContainer = document.getElementById('telegram-widget-container');
+            if (widgetContainer) {
+                // Очищаем только содержимое контейнера, но НЕ удаляем сам контейнер
+                widgetContainer.innerHTML = '';
+                console.log('✅ Widget container cleared');
+            }
+            
+            // Удаляем виджеты вне контейнера (скрипты и iframe)
+            const existingWidgets = document.querySelectorAll(
+                'script[src*="telegram-widget"], script[src*="telegram.org"], iframe[src*="telegram"]'
+            );
+            existingWidgets.forEach(el => {
+                // Не удаляем элементы, которые находятся внутри контейнера
+                if (widgetContainer && !widgetContainer.contains(el)) {
+                    el.remove();
                 }
             });
+            console.log('🗑️ Removed existing Telegram widgets');
         } else {
             console.log('ℹ️ Normal login mode - using existing Telegram session if available');
         }
         
         // Вставляем Telegram Widget
-        const widgetContainer = document.getElementById('telegram-widget-container');
-        if (widgetContainer) {
+        // Функция для инициализации виджета
+        const initWidget = () => {
+            const widgetContainer = document.getElementById('telegram-widget-container');
+            if (!widgetContainer) {
+                console.warn('⚠️ telegram-widget-container not found, retrying...');
+                // Пробуем еще раз через 100мс, если контейнер еще не загрузился
+                setTimeout(initWidget, 100);
+                return;
+            }
+            
+            // Если контейнер уже содержит iframe, не пересоздаем виджет
+            if (widgetContainer.querySelector('iframe[src*="telegram"]')) {
+                console.log('✅ Telegram widget already exists');
+                return;
+            }
+            
+            // Убеждаемся, что контейнер пуст перед добавлением виджета
+            widgetContainer.innerHTML = '';
+            
             const script = document.createElement('script');
             script.async = true;
-            script.src = 'https://telegram.org/js/telegram-widget.js?22';
+            
+            // Используем уникальную версию скрипта с timestamp для обхода кеша
+            const scriptVersion = (forceLogin || widgetReset) ? Date.now() : '22';
+            script.src = `https://telegram.org/js/telegram-widget.js?${scriptVersion}`;
+            
             script.setAttribute('data-telegram-login', 'sdfisdhfksdf_bot');
             script.setAttribute('data-size', 'large');
             script.setAttribute('data-onauth', 'onTelegramAuth(user)');
             script.setAttribute('data-request-access', 'write');
             
-            if (forceLogin) {
+            if (forceLogin || widgetReset) {
                 // Если включен режим смены аккаунта, добавляем уникальный return_to URL
                 const uniqueTimestamp = Date.now();
-                const returnToUrl = window.location.origin + window.location.pathname + '?t=' + uniqueTimestamp + '&forceLogin=true';
+                const randomStr = Math.random().toString(36).substring(7);
+                const returnToUrl = window.location.origin + window.location.pathname + 
+                    '?t=' + uniqueTimestamp + 
+                    '&forceLogin=true' + 
+                    '&_fresh=' + randomStr;
                 script.setAttribute('data-return-url', returnToUrl);
+                // Добавляем уникальный атрибут для принудительного пересоздания виджета
+                script.setAttribute('data-auth-url', window.location.href + '&_widget=' + uniqueTimestamp);
+                script.setAttribute('data-widget-reset', 'true');
                 console.log('✅ Telegram Widget loaded with unique return_to URL (force login mode):', returnToUrl);
+                console.log('🔐 Force login mode: Widget will force account selection');
             } else {
                 console.log('✅ Telegram Widget loaded (normal mode)');
             }
             
             widgetContainer.appendChild(script);
+            console.log('✅ Telegram widget script added to container');
+        };
+        
+        // Запускаем инициализацию виджета
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initWidget);
+        } else {
+            // DOM уже загружен
+            setTimeout(initWidget, 100);
         }
         
         // Determine API base URL

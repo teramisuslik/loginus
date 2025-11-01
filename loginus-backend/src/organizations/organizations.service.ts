@@ -490,7 +490,7 @@ export class OrganizationsService {
     }));
     
     console.log(`🔍 [OrganizationsService] Prepared ${rolesForFilter.length} roles for filtering:`, rolesForFilter.map(r => `${r.name} (level ${r.level})`));
-    
+
     // Фильтруем роли по уровню пользователя
     const filteredRoles = await this.roleHierarchyService.getAvailableRolesForInvite(
       userId,

@@ -47,18 +47,21 @@ export class GitHubAuthService {
       state: state || this.generateState(),
     });
     
-    // Добавляем параметр для принудительного выбора аккаунта (только если forceLogin=true)
+    // Добавляем параметры для принудительного выбора аккаунта (только если forceLogin=true)
     if (forceLogin) {
-      // login= (пустое значение) - заставляет GitHub показать экран выбора аккаунта
-      params.append('login', '');
-      // Добавляем уникальный timestamp в state для обхода кеша
+      // Добавляем уникальный timestamp в state для обхода кеша GitHub
       const timestamp = Date.now();
       const currentState = params.get('state') || '';
-      params.set('state', `${currentState}_${timestamp}`);
-      // Добавляем параметр для принудительного показа формы входа
-      // allow_signup=false может помочь, но не гарантирует показ экрана выбора
-      // Самый надежный способ - пользователь должен выйти из GitHub или использовать инкогнито
-      this.logger.log(`🔐 Force login enabled - GitHub will show account selection (state: ${params.get('state')}). Note: GitHub may ignore this if user is already logged in.`);
+      params.set('state', `${currentState}_${timestamp}_force`);
+      
+      // Параметр login с пустым значением может помочь показать экран выбора аккаунта
+      // Но GitHub может игнорировать его, если пользователь уже авторизован
+      // Более надежный способ - добавить случайный параметр для обхода кеша сессии
+      params.append('login', '');
+      // Добавляем случайный параметр для гарантированного обхода кеша
+      params.append('_', Date.now().toString());
+      
+      this.logger.log(`🔐 Force login enabled - GitHub OAuth URL with forced account selection (state: ${params.get('state')}). Note: User may need to log out from GitHub first for this to work reliably.`);
     }
 
     return `https://github.com/login/oauth/authorize?${params.toString()}`;
