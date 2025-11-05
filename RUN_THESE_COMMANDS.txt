@@ -1,0 +1,47 @@
+==========================================
+КОМАНДЫ ДЛЯ ДЕПЛОЯ OAuth
+==========================================
+Выполните эти команды по очереди в терминале (Git Bash или PowerShell)
+
+1. СОЗДАНИЕ ДИРЕКТОРИЙ:
+ssh -i C:\Users\teramisuslik\.ssh\id_ed25519 root@45.144.176.42 "mkdir -p /root/loginus-backend/src/auth/entities /root/loginus-backend/src/auth/services /root/loginus-backend/src/auth/controllers /root/loginus-backend/src/auth/dto /root/loginus-backend/src/database/migrations"
+
+2. КОПИРОВАНИЕ ФАЙЛОВ:
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\entities\oauth-client.entity.ts root@45.144.176.42:/root/loginus-backend/src/auth/entities/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\entities\authorization-code.entity.ts root@45.144.176.42:/root/loginus-backend/src/auth/entities/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\services\oauth.service.ts root@45.144.176.42:/root/loginus-backend/src/auth/services/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\controllers\oauth.controller.ts root@45.144.176.42:/root/loginus-backend/src/auth/controllers/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\dto\oauth-token.dto.ts root@45.144.176.42:/root/loginus-backend/src/auth/dto/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\database\migrations\1761343000000-CreateOAuthTables.ts root@45.144.176.42:/root/loginus-backend/src/database/migrations/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\package.json root@45.144.176.42:/root/loginus-backend/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\main.ts root@45.144.176.42:/root/loginus-backend/src/
+
+scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\src\auth\auth.module.ts root@45.144.176.42:/root/loginus-backend/src/auth/
+
+3. НА СЕРВЕРЕ (выполните через SSH):
+ssh -i C:\Users\teramisuslik\.ssh\id_ed25519 root@45.144.176.42
+
+Затем на сервере выполните:
+cd /root/loginus-backend
+npm install cookie-parser @types/cookie-parser
+npm run migration:run
+npm run build
+pm2 restart loginus-backend
+
+ИЛИ если используете systemd:
+systemctl restart loginus-backend
+
+ИЛИ если используете Docker:
+docker-compose restart backend
+
+==========================================
+ГОТОВО!
+==========================================
+

@@ -129,9 +129,17 @@ export class EmailService {
       
       // Fallback - показываем код в логах если отправка не удалась
       console.log('📧 [sendVerificationCode] Fallback - код в логах:');
-      console.log(`   To: ${email}`);
-      console.log(`   Subject: ${subject}`);
-      console.log(`   Code: ${code}`);
+      console.log(`   ╔═══════════════════════════════════════════════════════════╗`);
+      console.log(`   ║  EMAIL НЕ ОТПРАВЛЕН (SMTP ошибка), но код доступен:        ║`);
+      console.log(`   ║  To: ${email.padEnd(47)} ║`);
+      console.log(`   ║  Subject: ${subject.padEnd(43)} ║`);
+      console.log(`   ║  Code: ${code.padEnd(49)} ║`);
+      console.log(`   ╚═══════════════════════════════════════════════════════════╝`);
+      console.log(`   ⚠️  Для Yandex используйте пароль приложения:`);
+      console.log(`      1. https://id.yandex.ru/security`);
+      console.log(`      2. Включите "Пароли приложений"`);
+      console.log(`      3. Создайте пароль для "Почта"`);
+      console.log(`      4. Используйте этот пароль в SMTP_PASSWORD`);
       throw error; // Пробрасываем ошибку дальше
     }
   }

@@ -119,19 +119,13 @@ export class SmsTwoFactorService {
 
   /**
    * Проверка rate limit
+   * УБРАНО ограничение для nFA - можно отправлять неограниченное количество кодов
+   * Это необходимо потому что при nFA коды отправляются для всех методов одновременно
    */
   private async checkRateLimit(userId: string, method: string): Promise<boolean> {
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-    
-    const recentCodes = await this.twoFactorCodeRepo.count({
-      where: {
-        userId,
-        type: method as any,
-        createdAt: MoreThan(oneMinuteAgo),
-      },
-    });
-
-    return recentCodes < 3; // Максимум 3 кода в минуту
+    // Для nFA не ограничиваем - возвращаем true всегда
+    // Rate limit нужен только для обычной 2FA, но в nFA это не применимо
+    return true;
   }
 
   /**

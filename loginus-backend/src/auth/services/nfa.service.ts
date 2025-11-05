@@ -40,54 +40,13 @@ export class NfaService {
   async sendNfaCodes(userId: string): Promise<{ success: boolean; sentMethods: string[]; message: string }> {
     this.logger.log(`🚀 [sendNfaCodes] ВЫЗВАНА ФУНКЦИЯ sendNfaCodes для userId: ${userId}`);
     
-    // ВАЖНО: Убираем блокировку повторных запросов для nFA
+    // ВАЖНО: ПОЛНОСТЬЮ УБРАНА блокировка повторных запросов для nFA
     // Пользователь должен иметь возможность запросить коды повторно если они не пришли
-    // Проверяем только активные запросы (не старше 30 секунд)
-    const existingPromise = this.sendingCodes.get(userId);
-    if (existingPromise) {
-      // Проверяем, не завершился ли promise (но он еще в мапе)
-      // Даем возможность повторного запроса через 30 секунд
-      this.logger.warn(`⚠️ [sendNfaCodes] Обнаружен существующий promise для userId ${userId}`);
-      try {
-        // Проверяем статус promise (но не ждем его)
-        // Если promise уже resolved/rejected, он должен был удалиться из мапы
-        // Но на всякий случай разрешаем повторный запрос
-        this.logger.log(`✅ [sendNfaCodes] Разрешаем повторный запрос для userId ${userId}`);
-      } catch (error) {
-        // Игнорируем ошибки при проверке
-      }
-    }
+    // Не используем Map для блокировки - каждый запрос обрабатывается независимо
+    // Это гарантирует, что коды всегда отправляются, даже при параллельных запросах
     
-    // Удаляем старый promise если есть (на случай если он завис)
-    this.sendingCodes.delete(userId);
-    
-    // Создаем promise для отправки кодов
-    const sendPromise = this._sendNfaCodesInternal(userId);
-    
-    // Сохраняем promise в мапе
-    this.sendingCodes.set(userId, sendPromise);
-    
-    // Очищаем после завершения с гарантией
-    sendPromise
-      .then(() => {
-        this.logger.log(`✅ [sendNfaCodes] Promise завершен успешно для userId ${userId}, удаляем из мапы`);
-        this.sendingCodes.delete(userId);
-      })
-      .catch((error) => {
-        this.logger.error(`❌ [sendNfaCodes] Promise завершился с ошибкой для userId ${userId}: ${error.message}, удаляем из мапы`);
-        this.sendingCodes.delete(userId);
-      })
-      .finally(() => {
-        // Дополнительная гарантия очистки
-        setTimeout(() => {
-          if (this.sendingCodes.has(userId)) {
-            this.logger.warn(`⚠️ [sendNfaCodes] Принудительная очистка мапы для userId ${userId}`);
-            this.sendingCodes.delete(userId);
-          }
-        }, 60000); // Через 60 секунд гарантированно удаляем
-      });
-    
-    return sendPromise;
+    // Просто вызываем отправку кодов без блокировки
+    return this._sendNfaCodesInternal(userId);
   }
   
   /**
@@ -134,8 +93,18 @@ export class NfaService {
       const sentMethods: string[] = [];
 
       // Отправляем коды для всех выбранных методов
-      for (const method of selectedMethods) {
+      // ✅ ИСПРАВЛЕНИЕ: Добавляем небольшую задержку между отправкой кодов для разных методов
+      // Это помогает избежать проблем с rate limiting и улучшает надежность доставки
+      for (let i = 0; i < selectedMethods.length; i++) {
+        const method = selectedMethods[i];
         try {
+          // Добавляем задержку между отправкой кодов (кроме первого метода)
+          if (i > 0) {
+            const delay = 500; // 500ms задержка между методами
+            this.logger.log(`⏳ [sendNfaCodes] Задержка ${delay}ms перед отправкой кода для метода ${method}`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          
           switch (method) {
             case AuthMethodType.EMAIL:
                       this.logger.log(`📧 [sendNfaCodes] Sending EMAIL code for user ${userId}`);
@@ -210,18 +179,22 @@ export class NfaService {
     this.logger.log(`🔍 [verifyMethodCode] method === AuthMethodType.PHONE_TELEGRAM: ${method === AuthMethodType.PHONE_TELEGRAM}`);
     
     try {
+      let result;
       switch (method) {
         case AuthMethodType.EMAIL:
           this.logger.log(`📧 [verifyMethodCode] Проверка EMAIL кода`);
-          return await this.emailTwoFactorService.verifyEmailCode(userId, code);
+          result = await this.emailTwoFactorService.verifyEmailCode(userId, code);
+          break;
 
         case AuthMethodType.PHONE_TELEGRAM:
           this.logger.log(`💬 [verifyMethodCode] Проверка PHONE_TELEGRAM кода, вызываем verifyTelegramCode`);
-          return await this.telegramTwoFactorService.verifyTelegramCode(userId, code);
+          result = await this.telegramTwoFactorService.verifyTelegramCode(userId, code);
+          break;
 
         case AuthMethodType.GITHUB:
           this.logger.log(`🐙 [verifyMethodCode] Проверка GITHUB кода`);
-          return await this.githubTwoFactorService.verifyGitHubCode(userId, code);
+          result = await this.githubTwoFactorService.verifyGitHubCode(userId, code);
+          break;
 
         default:
           this.logger.warn(`⚠️ [verifyMethodCode] Неизвестный метод: ${method}`);
@@ -230,6 +203,13 @@ export class NfaService {
             message: `Метод ${method} не поддерживается`,
           };
       }
+      
+        // ✅ ИСПРАВЛЕНИЕ: После успешной верификации кода, логируем для отладки
+      if (result.success) {
+        this.logger.log(`✅ [verifyMethodCode] Код успешно проверен для метода ${method}`);
+      }
+      
+      return result;
     } catch (error) {
       this.logger.error(`❌ [verifyMethodCode] Ошибка проверки кода для метода ${method}:`, error);
       return {
@@ -259,7 +239,7 @@ export class NfaService {
       const verifiedMethods: string[] = [];
       const pendingMethods: string[] = [];
 
-      // Проверяем каждый метод - ищем pending коды
+        // Проверяем каждый метод - ищем pending коды
       for (const method of selectedMethods) {
         const typeMap: Record<string, TwoFactorType> = {
           [AuthMethodType.EMAIL]: TwoFactorType.EMAIL,
@@ -269,35 +249,72 @@ export class NfaService {
 
         const twoFactorType = typeMap[method];
         if (!twoFactorType) {
+          this.logger.warn(`⚠️ Unknown method type for nFA: ${method}`);
           pendingMethods.push(method);
           continue;
         }
 
+        this.logger.log(`🔍 Checking verification status for method: ${method}, type: ${twoFactorType}`);
+
         // Ищем использованные коды (verified) для этого метода
-        // Важно: ищем код с verifiedAt != null и сортируем по verifiedAt DESC, чтобы получить самый свежий
-        const verifiedCode = await this.twoFactorCodeRepo.findOne({
-          where: {
-            userId,
-            type: twoFactorType,
-            status: 'used' as any,
-            verifiedAt: Not(IsNull()) as any, // Только коды с установленным verifiedAt
-          },
-          order: { verifiedAt: 'DESC' },
-        });
+        // ✅ ИСПРАВЛЕНИЕ: Ищем код с verifiedAt не старше 15 минут, чтобы избежать старых кодов
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        this.logger.log(`🔍 [getVerificationStatus] Ищем код для метода ${method}, type ${twoFactorType}, userId ${userId}, минимум verifiedAt: ${fifteenMinutesAgo.toISOString()}`);
+        
+        const verifiedCode = await this.twoFactorCodeRepo
+          .createQueryBuilder('code')
+          .where('code.userId = :userId', { userId })
+          .andWhere('code.type = :type', { type: twoFactorType })
+          .andWhere('code.verifiedAt IS NOT NULL')
+          .andWhere('code.verifiedAt > :fifteenMinutesAgo', { fifteenMinutesAgo: fifteenMinutesAgo.toISOString() })
+          .orderBy('code.verifiedAt', 'DESC')
+          .getOne();
+        
+        this.logger.log(`🔍 [getVerificationStatus] Запрос выполнен, найдено кодов: ${verifiedCode ? 1 : 0}`);
+        
+        this.logger.log(`🔍 Found verified code for ${method}: ${verifiedCode ? 'yes' : 'no'}`, verifiedCode ? { verifiedAt: verifiedCode.verifiedAt, status: verifiedCode.status, type: verifiedCode.type } : null);
 
         if (verifiedCode) {
           // Проверяем что код был подтвержден недавно (в течение сессии - например, последние 10 минут, так как коды действительны 10 минут)
           const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-          if (verifiedCode.verifiedAt && verifiedCode.verifiedAt > tenMinutesAgo) {
+          
+          // ✅ ИСПРАВЛЕНИЕ: Правильное преобразование verifiedAt в Date
+          let verifiedAtDate: Date | null = null;
+          if (verifiedCode.verifiedAt instanceof Date) {
+            verifiedAtDate = verifiedCode.verifiedAt;
+          } else if (verifiedCode.verifiedAt) {
+            verifiedAtDate = new Date(verifiedCode.verifiedAt);
+          }
+          
+          this.logger.log(`🔍 [getVerificationStatus] Method ${method}: verifiedAtDate=${verifiedAtDate ? verifiedAtDate.toISOString() : 'null'}, tenMinutesAgo=${tenMinutesAgo.toISOString()}`);
+          
+          if (verifiedAtDate && verifiedAtDate > tenMinutesAgo) {
             verifiedMethods.push(method);
-            this.logger.log(`✅ Метод ${method} подтвержден (verifiedAt: ${verifiedCode.verifiedAt})`);
+            this.logger.log(`✅ Метод ${method} подтвержден (verifiedAt: ${verifiedAtDate.toISOString()}, tenMinutesAgo: ${tenMinutesAgo.toISOString()}, diff: ${(verifiedAtDate.getTime() - tenMinutesAgo.getTime()) / 1000}s)`);
           } else {
             pendingMethods.push(method);
-            this.logger.log(`⏳ Метод ${method} не подтвержден недавно (verifiedAt: ${verifiedCode.verifiedAt || 'null'}, tenMinutesAgo: ${tenMinutesAgo})`);
+            this.logger.warn(`⏳ Метод ${method} не подтвержден недавно (verifiedAt: ${verifiedAtDate ? verifiedAtDate.toISOString() : 'null'}, tenMinutesAgo: ${tenMinutesAgo.toISOString()}, diff: ${verifiedAtDate ? (verifiedAtDate.getTime() - tenMinutesAgo.getTime()) / 1000 : 'N/A'}s)`);
           }
         } else {
           pendingMethods.push(method);
-          this.logger.log(`⏳ Метод ${method} не найден в использованных кодах`);
+          this.logger.warn(`⏳ Метод ${method} не найден в использованных кодах. Searching for any codes with type ${twoFactorType}...`);
+          
+          // Дополнительная проверка: ищем все коды для этого метода (для отладки)
+          const allCodes = await this.twoFactorCodeRepo.find({
+            where: {
+              userId,
+              type: twoFactorType,
+            },
+            order: { verifiedAt: 'DESC' },
+            take: 5,
+          });
+          
+          this.logger.log(`🔍 Found ${allCodes.length} codes for method ${method}:`, allCodes.map(c => ({
+            id: c.id,
+            status: c.status,
+            verifiedAt: c.verifiedAt ? (c.verifiedAt instanceof Date ? c.verifiedAt.toISOString() : new Date(c.verifiedAt).toISOString()) : 'null',
+            createdAt: c.createdAt instanceof Date ? c.createdAt.toISOString() : new Date(c.createdAt).toISOString(),
+          })));
         }
       }
 

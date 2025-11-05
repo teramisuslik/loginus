@@ -217,7 +217,7 @@ export class AuthService {
     // Формируем объект пользователя с ролями для фронтенда
     const sanitizedUser = this.sanitizeUser(userWithRoles);
     // Добавляем роли в виде массива строк для фронтенда
-    sanitizedUser.roles = (userWithRoles.userRoleAssignments || []).map(
+    (sanitizedUser as any).roles = (userWithRoles.userRoleAssignments || []).map(
       (assignment) => assignment.role?.name || '',
     ).filter(Boolean);
 

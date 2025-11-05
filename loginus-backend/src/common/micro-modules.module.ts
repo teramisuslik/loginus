@@ -1,4 +1,4 @@
-import { Module, Global } from '@nestjs/common';
+import { Module, Global, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MicroModuleRegistryService } from './services/micro-module-registry.service';
 import { MicroModuleInitializerService } from './services/micro-module-initializer.service';
@@ -16,10 +16,10 @@ import { ReferralModule } from '../auth/micro-modules/referral-system/referral.m
 @Module({
   imports: [
     TypeOrmModule.forFeature([MicroModuleSettings]),
-    EmailAuthModule,
-    GitHubAuthMicroModuleModule,
-    TelegramAuthMicroModuleModule,
-    ReferralModule,
+    forwardRef(() => EmailAuthModule),
+    forwardRef(() => GitHubAuthMicroModuleModule),
+    forwardRef(() => TelegramAuthMicroModuleModule),
+    forwardRef(() => ReferralModule),
   ],
   providers: [
     MicroModuleRegistryService, 

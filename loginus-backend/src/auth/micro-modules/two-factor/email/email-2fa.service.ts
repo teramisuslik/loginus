@@ -195,10 +195,10 @@ export class EmailTwoFactorService {
       }
 
       // Отмечаем код как использованный и устанавливаем время подтверждения
-      await this.twoFactorCodeRepo.update(codeRecord.id, { 
-        status: 'used' as any,
-        verifiedAt: new Date()
-      });
+      // ✅ ИСПРАВЛЕНИЕ: Используем save() вместо update() для гарантии обновления
+      codeRecord.status = 'used' as any;
+      codeRecord.verifiedAt = new Date();
+      await this.twoFactorCodeRepo.save(codeRecord);
 
       // Обновляем статус пользователя
       await this.userRepo.update(userId, { emailVerified: true });

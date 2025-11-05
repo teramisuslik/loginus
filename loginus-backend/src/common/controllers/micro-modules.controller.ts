@@ -36,16 +36,21 @@ export class MicroModulesController {
     
     try {
       // Используем MicroModuleManagerService, который содержит зарегистрированные модули
-      const modules = this.microModuleManager.getAllModules();
+      let modules: any[] = [];
+      if (this.microModuleManager) {
+        modules = this.microModuleManager.getAllModules() as any[];
+      } else {
+        modules = this.microModuleRegistry.getAllModules() as any[];
+      }
     console.log('Found modules:', modules.length);
-      console.log('Module names:', modules.map(m => m.name));
+      console.log('Module names:', modules.map((m: any) => m.name));
     
     // Получаем реальные статусы из базы данных
     const moduleSettings = await this.microModuleSettingsService.getAllModuleSettings();
     const settingsMap = new Map(moduleSettings.map(s => [s.moduleName, s.isEnabled]));
     
     // Возвращаем только нужные данные без циклических ссылок
-      const result = modules.map(module => ({
+      const result = modules.map((module: any) => ({
       name: module.name,
       version: module.version,
       displayName: module.displayName,

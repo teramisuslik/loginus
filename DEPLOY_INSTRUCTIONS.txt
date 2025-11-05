@@ -1,0 +1,19 @@
+ИНСТРУКЦИЯ ПО ЗАГРУЗКЕ ФАЙЛА
+
+Из-за проблем с PowerShell, выполните команды вручную в Git Bash или WSL:
+
+1. Откройте Git Bash или WSL
+2. Перейдите в директорию проекта:
+   cd /c/Users/teramisuslik/работа/loginusV2
+
+3. Выполните команды:
+   
+   scp -i C:/Users/teramisuslik/.ssh/id_ed25519 frontend/index.html root@45.144.176.42:/tmp/index.html
+   
+   ssh -i C:/Users/teramisuslik/.ssh/id_ed25519 root@45.144.176.42 "docker cp /tmp/index.html loginus-backend:/app/frontend/index.html && rm /tmp/index.html && echo 'Done'"
+
+ИЛИ выполните:
+   bash deploy.sh
+
+После загрузки проверьте через браузер, что проблема решена.
+

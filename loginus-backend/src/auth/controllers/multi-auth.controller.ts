@@ -362,7 +362,7 @@ export class MultiAuthController {
       }
       
       const shouldForceLogin = forceLogin === 'true';
-      const authUrl = this.githubAuthService.getAuthUrl(finalState, shouldForceLogin);
+      const authUrl = this.githubAuthService.getAuthUrl(finalState);
       return { url: authUrl };
     } catch (error) {
       this.logger.error(`GitHub OAuth error: ${error.message}`);
@@ -386,6 +386,7 @@ export class MultiAuthController {
     @Query('code') code: string,
     @Query('state') state: string,
     @Res() res: Response,
+    @Req() req: Request,
   ) {
     this.logger.log(`GitHub OAuth callback received: code=${code?.substring(0, 10)}..., state=${state}`);
     
@@ -423,10 +424,42 @@ export class MultiAuthController {
           this.logger.log(`nFA required for GitHub user ${result.user.id}, methods: ${JSON.stringify(result.user.mfaSettings.methods)}`);
           
           const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
+          
+          // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Проверяем, действительно ли это OAuth flow
+          // Проверяем специальный cookie-флаг, который устанавливается только при реальном OAuth flow
+          // Также проверяем referer как дополнительный признак
+          const referer = req.headers.referer || '';
+          const oauthFlowFlag = req.cookies?.oauth_flow_active === 'true';
+          const isOAuthFlow = oauthFlowFlag || referer.includes('/oauth/authorize') || referer.includes('/api/oauth/authorize');
+          
+          const oauthClientId = req.cookies?.oauth_client_id;
+          const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+          
           // Редиректим на страницу nFA с параметрами
-          const redirectUrl = `${frontendUrl}/index.html?nfa=true&userId=${result.user.id}&methods=${encodeURIComponent(JSON.stringify(result.user.mfaSettings.methods))}`;
-          this.logger.log(`GitHub OAuth redirecting to nFA page: ${redirectUrl}`);
-          return res.redirect(redirectUrl);
+          const redirectUrl = new URL(`${frontendUrl}/index.html`);
+          redirectUrl.searchParams.set('nfa', 'true');
+          redirectUrl.searchParams.set('userId', result.user.id);
+          redirectUrl.searchParams.set('methods', encodeURIComponent(JSON.stringify(result.user.mfaSettings.methods)));
+          
+          // ✅ ИСПРАВЛЕНИЕ: Добавляем OAuth параметры ТОЛЬКО если это действительно OAuth flow
+          // Если это обычный вход (не через OAuth), очищаем OAuth cookies
+          if (isOAuthFlow && oauthClientId && oauthRedirectUri) {
+            this.logger.log(`✅ OAuth flow detected in GitHub nFA (referer: ${referer}, flag: ${oauthFlowFlag}), adding OAuth params to nFA redirect URL`);
+            redirectUrl.searchParams.set('oauth_flow', 'true');
+            redirectUrl.searchParams.set('return_to', '/api/oauth/authorize');
+            redirectUrl.searchParams.set('client_id', oauthClientId);
+          } else {
+            // Обычный вход - очищаем OAuth cookies
+            this.logger.log(`ℹ️ Regular GitHub login with nFA (not OAuth flow), clearing OAuth cookies`);
+            res.clearCookie('oauth_flow_active');
+            res.clearCookie('oauth_client_id');
+            res.clearCookie('oauth_redirect_uri');
+            res.clearCookie('oauth_scope');
+            res.clearCookie('oauth_state_param');
+          }
+          
+          this.logger.log(`GitHub OAuth redirecting to nFA page: ${redirectUrl.toString()}`);
+          return res.redirect(redirectUrl.toString());
         }
         
         // Генерируем JWT токены для пользователя через AuthService
@@ -435,7 +468,45 @@ export class MultiAuthController {
         
         this.logger.log(`GitHub OAuth tokens generated: accessToken=${accessToken.substring(0, 20)}..., refreshToken=${refreshToken.substring(0, 20)}...`);
         
-        // Перенаправляем на dashboard с токенами
+        // ✅ ПРОВЕРКА OAuth FLOW: Проверяем, действительно ли это OAuth flow
+        // Проверяем специальный cookie-флаг, который устанавливается только при реальном OAuth flow
+        // Также проверяем referer как дополнительный признак
+        const referer = req.headers.referer || '';
+        const oauthFlowFlag = req.cookies?.oauth_flow_active === 'true';
+        const isOAuthFlow = oauthFlowFlag || referer.includes('/oauth/authorize') || referer.includes('/api/oauth/authorize');
+        
+        const oauthClientId = req.cookies?.oauth_client_id;
+        const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+        const oauthScope = req.cookies?.oauth_scope;
+        const oauthState = req.cookies?.oauth_state_param;
+        
+        // ✅ ИСПРАВЛЕНИЕ: Добавляем OAuth редирект ТОЛЬКО если это действительно OAuth flow
+        if (isOAuthFlow && oauthClientId && oauthRedirectUri) {
+          this.logger.log(`✅ OAuth flow detected in GitHub callback (referer: ${referer}, flag: ${oauthFlowFlag}), redirecting to /oauth/authorize`);
+          this.logger.log(`OAuth params: client_id=${oauthClientId}, redirect_uri=${oauthRedirectUri}`);
+          
+          // Сохраняем токен в cookie для /oauth/authorize (он будет использовать JWT из cookie)
+          res.cookie('temp_access_token', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 60000, // 1 минута
+          });
+          
+          // Редиректим на /oauth/authorize для продолжения OAuth flow
+          const apiBaseUrl = process.env.API_BASE_URL || 'https://vselena.ldmco.ru/api';
+          return res.redirect(`${apiBaseUrl}/oauth/authorize`);
+        } else {
+          // Обычный вход - очищаем OAuth cookies
+          this.logger.log(`ℹ️ Regular GitHub login (not OAuth flow), clearing OAuth cookies`);
+          res.clearCookie('oauth_flow_active');
+          res.clearCookie('oauth_client_id');
+          res.clearCookie('oauth_redirect_uri');
+          res.clearCookie('oauth_scope');
+          res.clearCookie('oauth_state_param');
+        }
+        
+        // Перенаправляем на dashboard с токенами (обычный flow)
         const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
         const redirectUrl = `${frontendUrl}/dashboard.html?token=${accessToken}&refreshToken=${refreshToken}`;
         this.logger.log(`GitHub OAuth redirecting to: ${redirectUrl}`);
@@ -542,7 +613,11 @@ export class MultiAuthController {
   @Post('telegram-login')
   @Public()
   @ApiOperation({ summary: 'Обработка Telegram Login Widget' })
-  async handleTelegramLogin(@Body() body: { telegramUser?: any; bind?: boolean; userId?: string } | any) {
+  async handleTelegramLogin(
+    @Body() body: { telegramUser?: any; bind?: boolean; userId?: string } | any,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     this.logger.log(`Telegram Login request received. Body keys: ${Object.keys(body).join(', ')}`);
     this.logger.log(`Telegram Login body (first 300 chars): ${JSON.stringify(body).substring(0, 300)}`);
     
@@ -615,13 +690,13 @@ export class MultiAuthController {
           
           const tokens = await this.generateTokens(mergedUser);
           
-          return {
+          return res.json({
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             user: mergedUser,
             merged: true,
             message: 'Аккаунты успешно объединены'
-          };
+          });
         }
       }
       
@@ -659,11 +734,11 @@ export class MultiAuthController {
       
       this.logger.log(`Tokens generated for current user ${userId}`);
       
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        user: currentUser,
-      };
+          return res.json({
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            user: currentUser,
+          });
     }
     
     // Only find or create user if this is NOT a binding request
@@ -677,14 +752,44 @@ export class MultiAuthController {
           // nFA включена - требуем подтверждение всех методов
           // Коды будут отправлены фронтендом, чтобы избежать дублирования
           this.logger.log(`nFA required for Telegram user ${user.id}, methods: ${JSON.stringify(user.mfaSettings.methods)}`);
-          const response = {
+          
+          // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Проверяем, действительно ли это OAuth flow
+          // Проверяем специальный cookie-флаг, который устанавливается только при реальном OAuth flow
+          // Также проверяем referer как дополнительный признак
+          const referer = req.headers.referer || '';
+          const oauthFlowFlag = req.cookies?.oauth_flow_active === 'true';
+          const isOAuthFlow = oauthFlowFlag || referer.includes('/oauth/authorize') || referer.includes('/api/oauth/authorize');
+          
+          const oauthClientId = req.cookies?.oauth_client_id;
+          const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+          
+          const response: any = {
             requiresNFA: true,
             message: 'Требуется подтверждение всех выбранных методов защиты',
             userId: user.id,
             methods: user.mfaSettings.methods,
           };
+          
+          // ✅ ИСПРАВЛЕНИЕ: Добавляем OAuth флаги ТОЛЬКО если это действительно OAuth flow
+          // Если это обычный вход (не через OAuth), очищаем OAuth cookies
+          if (isOAuthFlow && (oauthClientId || oauthRedirectUri)) {
+            this.logger.log(`✅ OAuth flow detected for Telegram nFA (referer: ${referer}), adding OAuth flags to response`);
+            response.oauthFlow = true;
+            response.returnTo = '/api/oauth/authorize';
+            if (oauthClientId) {
+              response.clientId = oauthClientId;
+            }
+          } else {
+            // Обычный вход - очищаем OAuth cookies
+            this.logger.log(`ℹ️ Regular Telegram login (not OAuth flow), clearing OAuth cookies`);
+            res.clearCookie('oauth_client_id');
+            res.clearCookie('oauth_redirect_uri');
+            res.clearCookie('oauth_scope');
+            res.clearCookie('oauth_state_param');
+          }
+          
           this.logger.log(`Returning nFA response: ${JSON.stringify(response)}`);
-          return response;
+          return res.json(response);
         }
         
         // Генерируем токены
@@ -692,7 +797,15 @@ export class MultiAuthController {
         const tokens = await this.generateTokens(user);
         this.logger.log(`Tokens generated successfully for user ${user.id}`);
         
-        const response = {
+        // ✅ ПРОВЕРКА OAuth FLOW: Проверяем, действительно ли это OAuth flow
+        // Проверяем referer - если запрос пришел из /oauth/authorize, это OAuth flow
+        const referer = req.headers.referer || '';
+        const isOAuthFlow = referer.includes('/oauth/authorize') || referer.includes('/api/oauth/authorize');
+        
+        const oauthClientId = req.cookies?.oauth_client_id;
+        const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+        
+        const response: any = {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
           user: {
@@ -702,8 +815,23 @@ export class MultiAuthController {
             lastName: user.lastName,
           },
         };
+        
+        // ✅ ИСПРАВЛЕНИЕ: Добавляем OAuth флаг ТОЛЬКО если это действительно OAuth flow
+        if (isOAuthFlow && oauthClientId && oauthRedirectUri) {
+          this.logger.log(`OAuth flow detected in Telegram login (referer: ${referer}), adding oauthFlow flag`);
+          response.oauthFlow = true;
+          response.returnTo = '/api/oauth/authorize';
+        } else {
+          // Обычный вход - очищаем OAuth cookies
+          this.logger.log(`ℹ️ Regular Telegram login (not OAuth flow), clearing OAuth cookies`);
+          res.clearCookie('oauth_client_id');
+          res.clearCookie('oauth_redirect_uri');
+          res.clearCookie('oauth_scope');
+          res.clearCookie('oauth_state_param');
+        }
+        
         this.logger.log(`Returning success response for Telegram user ${user.id}`);
-        return response;
+        return res.json(response);
       } else {
         this.logger.error('handleTelegramLogin returned null');
         throw new Error('Не удалось авторизовать пользователя');
@@ -711,10 +839,10 @@ export class MultiAuthController {
     } catch (error) {
       this.logger.error(`Error in handleTelegramLogin: ${error.message}`, error.stack);
       // Возвращаем объект ошибки вместо throw, чтобы фронтенд мог правильно обработать
-      return {
+      return res.status(400).json({
         error: error.message || 'Неизвестная ошибка',
         message: error.message || 'Неизвестная ошибка',
-      };
+      });
     }
   }
 

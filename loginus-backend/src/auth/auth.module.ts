@@ -30,8 +30,11 @@ import { GitHubAuthService } from './services/github-auth.service';
 import { VKontakteAuthService } from './services/vkontakte-auth.service';
 import { GosuslugiAuthService } from './services/gosuslugi-auth.service';
 import { MultiAuthController } from './controllers/multi-auth.controller';
+import { OAuthController } from './controllers/oauth.controller';
 import { VerificationCode } from './entities/verification-code.entity';
 import { AccountMergeRequest } from './entities/account-merge-request.entity';
+import { OAuthClient } from './entities/oauth-client.entity';
+import { AuthorizationCode } from './entities/authorization-code.entity';
 
 // Micro Modules
 import { FinalMicroModulesModule } from './micro-modules/final-micro-modules.module';
@@ -42,6 +45,7 @@ import { EmailCodeModule } from './micro-modules/email-code/email-code.module';
 // nFA Service and Controller
 import { NfaService } from './services/nfa.service';
 import { NfaController } from './controllers/nfa.controller';
+import { OAuthService } from './services/oauth.service';
 
 @Module({
   imports: [
@@ -56,6 +60,9 @@ import { NfaController } from './controllers/nfa.controller';
       // ✅ НОВЫЕ ENTITIES ДЛЯ MULTI-AUTH
       VerificationCode,
       AccountMergeRequest,
+      // ✅ OAuth ENTITIES
+      OAuthClient,
+      AuthorizationCode,
     ]),
     PassportModule,
     JwtModule.registerAsync({
@@ -83,6 +90,7 @@ import { NfaController } from './controllers/nfa.controller';
     // ✅ НОВЫЕ КОНТРОЛЛЕРЫ ДЛЯ MULTI-AUTH
     MultiAuthController,
     NfaController, // nFA контроллер
+    OAuthController, // OAuth контроллер
   ],
   providers: [
     AuthService, 
@@ -99,6 +107,7 @@ import { NfaController } from './controllers/nfa.controller';
     GosuslugiAuthService,
     NfaService, // nFA сервис
     GitHubTwoFactorService, // GitHub 2FA сервис для nFA
+    OAuthService, // OAuth сервис
   ],
   exports: [
     AuthService, 

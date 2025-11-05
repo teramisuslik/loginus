@@ -1707,6 +1707,24 @@
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
+            // ✅ СБРОС СОСТОЯНИЙ: Очищаем все состояния при загрузке страницы
+            // Это важно после выхода, чтобы избежать блокировки кнопок
+            isRedirecting = false;
+            selectedAuthMethod = null;
+            
+            // Очищаем все классы selected с карточек
+            document.querySelectorAll('.auth-method-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Скрываем info о выбранном методе
+            const methodInfoEl = document.getElementById('selectedMethodInfo');
+            if (methodInfoEl) {
+                methodInfoEl.style.display = 'none';
+            }
+            
+            console.log('🔄 States reset on page load');
+            
             // Привязываем обработчики событий для кнопок авторизации
             // ВАЖНО: Используем addEventListener вместо inline onclick для надежности
             const authMethodCards = document.querySelectorAll('.auth-method-card');
@@ -1715,10 +1733,21 @@
                 card.style.cursor = 'pointer';
                 card.style.pointerEvents = 'auto';
                 
+                // Удаляем старые обработчики, если они есть (для предотвращения дублирования)
+                const newCard = card.cloneNode(true);
+                card.parentNode.replaceChild(newCard, card);
+                
                 // Добавляем обработчик через addEventListener - это надежнее чем inline onclick
-                card.addEventListener('click', function(e) {
+                newCard.addEventListener('click', function(e) {
                     e.preventDefault();
                     e.stopPropagation();
+                    
+                    // Проверяем, не блокирован ли клик
+                    if (isRedirecting) {
+                        console.log('🚫 Click blocked - redirect in progress');
+                        return;
+                    }
+                    
                     const method = this.getAttribute('data-method');
                     console.log('🖱️ Card clicked via addEventListener, method:', method, 'Card ID:', this.id);
                     if (method) {
@@ -1733,8 +1762,15 @@
                 }, true); // Используем capture для надежности
                 
                 // Также добавляем обработчик через touchstart для мобильных устройств
-                card.addEventListener('touchstart', function(e) {
+                newCard.addEventListener('touchstart', function(e) {
                     e.preventDefault();
+                    
+                    // Проверяем, не блокирован ли клик
+                    if (isRedirecting) {
+                        console.log('🚫 Touch blocked - redirect in progress');
+                        return;
+                    }
+                    
                     const method = this.getAttribute('data-method');
                     if (method && typeof window.selectAuthMethod === 'function') {
                         window.selectAuthMethod(method);
@@ -1776,15 +1812,81 @@
             }
             
             // Check if nFA is required from URL parameter (for GitHub/Telegram OAuth)
-            // Используем флаг, чтобы избежать повторной отправки при перезагрузке страницы
+            // ВАЖНО: Проверяем nFA ПЕРЕД проверкой токена, чтобы избежать редиректа на dashboard
             const nfaParam = urlParams.get('nfa');
-            const nfaCodesSent = sessionStorage.getItem('nfaCodesSent');
-            console.log('🔍 [DOMContentLoaded] nFA check:', { nfaParam, nfaCodesSent, condition: nfaParam === 'true' && !nfaCodesSent });
+            const nfaUserId = urlParams.get('userId');
+            const nfaMethodsStr = urlParams.get('methods');
             
-            if (nfaParam === 'true' && !nfaCodesSent) {
+            // ✅ ИСПРАВЛЕНИЕ: Проверяем, действительно ли это новая попытка nFA
+            // Если userId из URL отличается от сохраненного в sessionStorage, это новая попытка
+            const savedNfaUserId = sessionStorage.getItem('nfaUserId');
+            const nfaCodesSent = sessionStorage.getItem('nfaCodesSent');
+            const isNewNfaAttempt = nfaUserId && nfaUserId !== savedNfaUserId;
+            
+            // ✅ ИСПРАВЛЕНИЕ: Очищаем флаги отправки кодов при новой попытке или если прошло много времени
+            // Это гарантирует, что коды всегда отправляются при новой попытке входа
+            if (isNewNfaAttempt && savedNfaUserId) {
+                console.log('🔄 [DOMContentLoaded] New nFA attempt detected, clearing old flags');
+                const oldCodesSentKey = `nfaCodesSent_${savedNfaUserId}`;
+                sessionStorage.removeItem(oldCodesSentKey);
+                sessionStorage.removeItem('nfaCodesSent');
+            }
+            
+            console.log('🔍 [DOMContentLoaded] nFA check:', { 
+                nfaParam, 
+                nfaUserId, 
+                savedNfaUserId,
+                nfaCodesSent, 
+                isNewNfaAttempt,
+                condition: nfaParam === 'true' && (isNewNfaAttempt || !nfaCodesSent)
+            });
+            
+            if (nfaParam === 'true' && nfaUserId && nfaMethodsStr && (isNewNfaAttempt || !nfaCodesSent)) {
                 const nfaUserId = urlParams.get('userId');
                 const nfaMethodsStr = urlParams.get('methods');
                 console.log('🔍 [DOMContentLoaded] nFA params:', { nfaUserId, nfaMethodsStr });
+                
+                // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Если мы в OAuth flow, сохраняем параметры в sessionStorage
+                // Проверяем параметры из URL (могут быть сохранены при редиректе на nFA)
+                const oauthFlow = urlParams.get('oauth_flow') === 'true';
+                const returnTo = urlParams.get('return_to');
+                const clientId = urlParams.get('client_id');
+                
+                if (oauthFlow && returnTo) {
+                    console.log('🔄 [DOMContentLoaded] Saving OAuth flow params to sessionStorage before nFA:', { oauthFlow, returnTo, clientId });
+                    sessionStorage.setItem('oauth_flow', 'true');
+                    sessionStorage.setItem('return_to', returnTo);
+                    if (clientId) {
+                        sessionStorage.setItem('oauth_client_id', clientId);
+                    }
+                }
+                
+                // Также проверяем cookies на наличие OAuth параметров (могут быть установлены бэкендом)
+                const cookies = document.cookie.split(';');
+                const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+                const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                const oauthStateCookie = cookies.find(c => c.trim().startsWith('oauth_state_param='));
+                
+                if (oauthClientIdCookie || oauthRedirectUriCookie) {
+                    console.log('🔄 [DOMContentLoaded] Found OAuth cookies, saving to sessionStorage');
+                    if (oauthClientIdCookie) {
+                        const clientIdFromCookie = oauthClientIdCookie.split('=')[1];
+                        sessionStorage.setItem('oauth_client_id', clientIdFromCookie);
+                    }
+                    if (oauthRedirectUriCookie) {
+                        const redirectUriFromCookie = oauthRedirectUriCookie.split('=')[1];
+                        sessionStorage.setItem('oauth_redirect_uri', redirectUriFromCookie);
+                        // Если return_to не установлен, используем redirect_uri для определения return_to
+                        if (!returnTo) {
+                            sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                            sessionStorage.setItem('oauth_flow', 'true');
+                        }
+                    }
+                    if (oauthStateCookie) {
+                        const stateFromCookie = oauthStateCookie.split('=')[1];
+                        sessionStorage.setItem('oauth_state_param', stateFromCookie);
+                    }
+                }
                 
                 if (nfaUserId && nfaMethodsStr) {
                     try {
@@ -1797,7 +1899,11 @@
                         const codesAlreadySent = sessionStorage.getItem(codesSentKey);
                         console.log('🔍 [DOMContentLoaded] Codes sent check:', { codesSentKey, codesAlreadySent });
                         
-                        if (!codesAlreadySent) {
+                        // ✅ ИСПРАВЛЕНИЕ: Сохраняем userId ПЕРЕД проверкой codesAlreadySent
+                        // Это гарантирует, что при новой попытке мы распознаем ее как новую
+                        sessionStorage.setItem('nfaUserId', nfaUserId);
+                        
+                        if (!codesAlreadySent || isNewNfaAttempt) {
                             console.log('📤 [DOMContentLoaded] Sending nFA codes for userId:', nfaUserId);
                             console.log('📤 [DOMContentLoaded] About to call sendNFACodes with userId:', nfaUserId);
                             // Помечаем, что коды уже отправлены, чтобы избежать дублирования
@@ -1826,7 +1932,7 @@
                             showNFAForm(nfaMethods);
                             showMessage('Введите коды для завершения входа.', 'info');
                         }
-                        return;
+                        return; // ✅ КРИТИЧНО: Прерываем дальнейшую обработку, чтобы не сработал verifyTokenAndRedirect
                     } catch (e) {
                         console.error('❌ [DOMContentLoaded] Error parsing nFA parameters:', e);
                         sessionStorage.removeItem('nfaCodesSent');
@@ -1843,7 +1949,10 @@
                         const nfaMethods = JSON.parse(decodeURIComponent(nfaMethodsStr));
                         pendingNFAUserId = nfaUserId;
                         pendingNFAMethods = nfaMethods;
+                        // ✅ ИСПРАВЛЕНИЕ: Сохраняем userId даже если коды уже отправлены
+                        sessionStorage.setItem('nfaUserId', nfaUserId);
                         showNFAForm(nfaMethods);
+                        return; // ✅ КРИТИЧНО: Прерываем дальнейшую обработку
                     } catch (e) {
                         console.error('Error parsing nFA parameters:', e);
                     }
@@ -1873,6 +1982,13 @@
                 return;
             }
 
+            // ✅ ПРОВЕРКА: Если мы на API endpoint, не обрабатываем это как frontend страницу
+            const currentPath = window.location.pathname;
+            if (currentPath.startsWith('/api/') || currentPath.startsWith('/oauth/')) {
+                console.log('⚠️ On API endpoint, skipping frontend processing:', currentPath);
+                return;
+            }
+            
             // Check if user is already logged in
             // ВАЖНО: Проверяем токен в URL ПЕРВЫМ делом (после nFA и других спец. случаев)
             const urlParamsCheck = new URLSearchParams(window.location.search);
@@ -1901,7 +2017,95 @@
                 // Show method selection by default
                 showMethodStep().catch(e => console.error('Error in showMethodStep:', e));
             } else {
+            console.log('🔍 [DOMContentLoaded] Entering OAuth flow check block, nFA param:', nfaParamCheck);
+            // ✅ ИСПРАВЛЕНИЕ: СНАЧАЛА проверяем OAuth flow, ПОТОМ токен
+            // Это критично - при OAuth flow мы всегда показываем форму входа
+            const urlParams = new URLSearchParams(window.location.search);
+            const cookies = document.cookie.split(';');
+            
+            // Проверяем OAuth flow из URL, sessionStorage И cookies (которые могут быть установлены бэкендом)
+            const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+            const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+            const hasOAuthCookies = !!(oauthClientIdCookie || oauthRedirectUriCookie);
+            
+            // Проверяем URL параметры напрямую (более надежно)
+            const urlOAuthFlow = window.location.search.includes('oauth_flow=true') || window.location.search.includes('oauth_flow=1');
+            const urlHasClientId = window.location.search.includes('client_id=');
+            const urlHasReturnTo = window.location.search.includes('return_to=');
+            
+            const isOAuthFlow = urlOAuthFlow || urlHasClientId || urlHasReturnTo ||
+                                urlParams.get('oauth_flow') === 'true' || urlParams.get('oauth_flow') === '1' || 
+                                sessionStorage.getItem('oauth_flow') === 'true' || 
+                                sessionStorage.getItem('return_to')?.includes('/oauth/authorize') ||
+                                hasOAuthCookies; // Если есть OAuth cookies - это OAuth flow
+            
+            console.log('🔍 OAuth flow check (BEFORE token check):', {
+                urlOAuthFlow,
+                urlHasClientId,
+                urlHasReturnTo,
+                urlParamsOAuthFlow: urlParams.get('oauth_flow'),
+                sessionStorageOAuthFlow: sessionStorage.getItem('oauth_flow'),
+                sessionStorageReturnTo: sessionStorage.getItem('return_to'),
+                hasOAuthCookies,
+                isOAuthFlow,
+                currentUrl: window.location.href
+            });
+            
+            // ✅ ИСПРАВЛЕНИЕ: При OAuth flow ВСЕГДА показываем форму входа, даже если есть токен
+            if (isOAuthFlow) {
+                console.log('🔄 OAuth flow detected - showing login form (allows switching accounts, ignoring token)');
+                // Показываем форму входа, даже если есть токен
+                showMethodStep().catch(e => console.error('Error in showMethodStep:', e));
+                return; // Выходим раньше, не проверяя токен
+            }
+            
+            // ✅ ИСПРАВЛЕНИЕ: Проверяем не только localStorage, но и cookies (temp_access_token)
+            // Если пользователь только что вышел, токены должны быть очищены
             authToken = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+            
+            // ✅ ИСПРАВЛЕНИЕ: Проверяем параметр URL _logout=1, который может быть передан при выходе из AI Aggregator
+            // Если есть этот параметр, очищаем все токены и показываем форму входа
+            const logoutParam = urlParams.get('_logout');
+            if (logoutParam === '1' || logoutParam === 'true') {
+                console.log('🧹 Logout parameter detected, clearing all tokens and cookies');
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('userData');
+                sessionStorage.clear();
+                
+                // Очищаем все cookies
+                const cookiesToClear = [
+                    'temp_access_token',
+                    'oauth_client_id',
+                    'oauth_redirect_uri',
+                    'oauth_scope',
+                    'oauth_state_param'
+                ];
+                cookiesToClear.forEach(cookieName => {
+                    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+                    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/`;
+                });
+                
+                // Удаляем параметр из URL
+                urlParams.delete('_logout');
+                const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+                window.history.replaceState({}, document.title, newUrl);
+                
+                authToken = null;
+            }
+            
+            // Проверяем cookies на наличие temp_access_token (может остаться после OAuth flow)
+            const tempTokenCookie = cookies.find(c => c.trim().startsWith('temp_access_token='));
+            
+            // Если есть только temp_access_token в cookies, но нет в localStorage - это остаток от OAuth flow
+            // Очищаем его и показываем форму входа
+            if (!authToken && tempTokenCookie) {
+                console.log('🧹 Found temp_access_token cookie but no localStorage token - clearing cookie');
+                document.cookie = 'temp_access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
+                authToken = null;
+            }
+            
             if (authToken) {
                 console.log('🔑 Found token, verifying...');
                 // Verify token and redirect to dashboard
@@ -1984,7 +2188,22 @@
                 // Очищаем все данные sessionStorage
                 sessionStorage.clear();
                 
-                // Очищаем cookies (все cookies для текущего домена)
+                // ✅ ИСПРАВЛЕНИЕ: Очищаем все cookies, включая temp_access_token и OAuth cookies
+                const cookiesToClear = [
+                    'temp_access_token',
+                    'oauth_client_id',
+                    'oauth_redirect_uri',
+                    'oauth_scope',
+                    'oauth_state_param'
+                ];
+                
+                // Очищаем специфичные cookies
+                cookiesToClear.forEach(cookieName => {
+                    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+                    document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/`;
+                });
+                
+                // Очищаем все остальные cookies для текущего домена
                 document.cookie.split(";").forEach(function(c) { 
                     document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
                 });
@@ -2044,6 +2263,32 @@
                     showEmailStep();
                     break;
                 case 'TELEGRAM_OAUTH':
+                    // ✅ ИСПРАВЛЕНИЕ: Очищаем флаги отправки nFA кодов при новой попытке входа
+                    // Это гарантирует, что коды всегда отправляются, даже если пользователь пытался войти ранее
+                    const nfaUserIdToClearTelegram = sessionStorage.getItem('nfaUserId');
+                    if (nfaUserIdToClearTelegram) {
+                        console.log('🔄 [proceedWithSelectedMethod] Clearing nFA flags for new login attempt');
+                        const codesSentKeyToClearTelegram = `nfaCodesSent_${nfaUserIdToClearTelegram}`;
+                        sessionStorage.removeItem(codesSentKeyToClearTelegram);
+                        sessionStorage.removeItem('nfaCodesSent');
+                        sessionStorage.removeItem('nfaUserId');
+                    }
+                    
+                    // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Если мы в OAuth flow, сохраняем параметры в sessionStorage
+                    const urlParamsTelegram = new URLSearchParams(window.location.search);
+                    const oauthFlowTelegram = urlParamsTelegram.get('oauth_flow') === 'true';
+                    const returnToTelegram = urlParamsTelegram.get('return_to');
+                    const clientIdTelegram = urlParamsTelegram.get('client_id');
+                    
+                    if (oauthFlowTelegram && returnToTelegram) {
+                        console.log('🔄 Saving OAuth flow params to sessionStorage:', { oauthFlow: oauthFlowTelegram, returnTo: returnToTelegram, clientId: clientIdTelegram });
+                        sessionStorage.setItem('oauth_flow', 'true');
+                        sessionStorage.setItem('return_to', returnToTelegram);
+                        if (clientIdTelegram) {
+                            sessionStorage.setItem('oauth_client_id', clientIdTelegram);
+                        }
+                    }
+                    
                     // Проверяем, нужно ли принудительно показать выбор аккаунта
                     const forceTelegram = sessionStorage.getItem('forceSwitchAccount') === 'true';
                     const telegramUrl = forceTelegram 
@@ -2060,13 +2305,40 @@
                 case 'GITHUB':
                     // Перенаправляем на страницу github-login.html, откуда можно выбрать аккаунт
                     console.log('🔵 [proceedWithSelectedMethod] GitHub selected, redirecting to github-login.html...');
+                    
+                    // ✅ ИСПРАВЛЕНИЕ: Очищаем флаги отправки nFA кодов при новой попытке входа
+                    // Это гарантирует, что коды всегда отправляются, даже если пользователь пытался войти ранее
+                    const nfaUserIdToClear = sessionStorage.getItem('nfaUserId');
+                    if (nfaUserIdToClear) {
+                        console.log('🔄 [proceedWithSelectedMethod] Clearing nFA flags for new login attempt');
+                        const codesSentKeyToClear = `nfaCodesSent_${nfaUserIdToClear}`;
+                        sessionStorage.removeItem(codesSentKeyToClear);
+                        sessionStorage.removeItem('nfaCodesSent');
+                        sessionStorage.removeItem('nfaUserId');
+                    }
+                    
+                    // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Если мы в OAuth flow, сохраняем параметры в sessionStorage
+                    const urlParamsGitHub = new URLSearchParams(window.location.search);
+                    const oauthFlowGitHub = urlParamsGitHub.get('oauth_flow') === 'true';
+                    const returnToGitHub = urlParamsGitHub.get('return_to');
+                    const clientIdGitHub = urlParamsGitHub.get('client_id');
+                    
+                    if (oauthFlowGitHub && returnToGitHub) {
+                        console.log('🔄 Saving OAuth flow params to sessionStorage:', { oauthFlow: oauthFlowGitHub, returnTo: returnToGitHub, clientId: clientIdGitHub });
+                        sessionStorage.setItem('oauth_flow', 'true');
+                        sessionStorage.setItem('return_to', returnToGitHub);
+                        if (clientIdGitHub) {
+                            sessionStorage.setItem('oauth_client_id', clientIdGitHub);
+                        }
+                    }
+                    
                     const forceLoginGitHub = sessionStorage.getItem('forceSwitchAccount') === 'true';
+                    let githubUrl = 'github-login.html';
                     if (forceLoginGitHub) {
                         sessionStorage.removeItem('forceSwitchAccount');
-                        window.location.href = 'github-login.html?forceLogin=true';
-                    } else {
-                        window.location.href = 'github-login.html';
+                        githubUrl += '?forceLogin=true';
                     }
+                    window.location.href = githubUrl;
                     break;
                 default:
                     showMessage('Выбранный метод не поддерживается', 'error');
@@ -2386,9 +2658,37 @@
                         localStorage.setItem('refreshToken', response.refreshToken);
                     }
 
+                    // ✅ НЕ СКРЫВАЕМ ФОРМУ: Оставляем форму видимой для проверки редиректа
+                    hideLoading('loginBtn', 'loginBtnText', 'loginLoading');
                     showMessage('Вход выполнен успешно!', 'success');
                     
-                    // Redirect based on role
+                    // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+                    // Проверяем параметры из URL (которые могли быть сохранены при редиректе на страницу логина)
+                    const urlParamsEmail = new URLSearchParams(window.location.search);
+                    const oauthFlowEmail = urlParamsEmail.get('oauth_flow') === 'true';
+                    const returnToEmail = urlParamsEmail.get('return_to');
+                    
+                    if (oauthFlowEmail && (returnToEmail === '/oauth/authorize' || returnToEmail === '/api/oauth/authorize')) {
+                        console.log('🔄 OAuth flow detected after Email login, redirecting to /api/oauth/authorize');
+                        console.log('🔄 OAuth params:', { oauthFlow: oauthFlowEmail, returnTo: returnToEmail, apiBaseUrl: window.API_BASE_URL });
+                        
+                        // Сохраняем токен в cookie для /oauth/authorize (аналогично GitHub/Telegram)
+                        document.cookie = `temp_access_token=${authToken}; path=/; max-age=60; SameSite=Lax`;
+                        console.log('✅ Token saved to temp_access_token cookie');
+                        
+                        setTimeout(() => {
+                            isRedirecting = true;
+                            // ✅ ИСПРАВЛЕНИЕ: API_BASE_URL не содержит /api, нужно добавить
+                            const apiBaseUrl = window.API_BASE_URL || 'https://vselena.ldmco.ru';
+                            const redirectUrl = `${apiBaseUrl}/api/oauth/authorize`;
+                            console.log('🔄 Redirecting to:', redirectUrl);
+                            console.log('🔄 API_BASE_URL:', apiBaseUrl);
+                            window.location.href = redirectUrl;
+                        }, 1000);
+                        return;
+                    }
+                    
+                    // Redirect based on role (обычный flow)
                     setTimeout(() => {
                         redirectBasedOnRole(response.user);
                     }, 1000);
@@ -2558,31 +2858,78 @@
             
             try {
                 // Проверяем каждый метод
+                const verificationResults = [];
                 for (const method of pendingNFAMethods) {
                     const code = methodCodes[method];
-                    if (!code) continue;
+                    if (!code) {
+                        console.warn(`⚠️ No code provided for method ${method}`);
+                        continue;
+                    }
                     
-                    const response = await apiCall('/api/auth/nfa/verify-method/public', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            userId: pendingNFAUserId,
-                            method: method,
-                            code: code
-                        })
-                    });
+                    console.log(`🔍 Verifying code for method: ${method}, code: ${code.substring(0, 2)}...`);
                     
-                    if (!response.success) {
-                        showMessage(`Неверный код для метода ${method}`, 'error');
+                    try {
+                        const response = await apiCall('/api/auth/nfa/verify-method/public', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                userId: pendingNFAUserId,
+                                method: method,
+                                code: code
+                            })
+                        });
+                        
+                        console.log(`📋 Verification result for ${method}:`, response);
+                        verificationResults.push({ method, success: response.success, response });
+                        
+                        if (!response.success) {
+                            showMessage(`Неверный код для метода ${method}: ${response.message || 'Неверный код'}`, 'error');
+                            hideLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
+                            return;
+                        }
+                    } catch (error) {
+                        console.error(`❌ Error verifying method ${method}:`, error);
+                        showMessage(`Ошибка проверки кода для метода ${method}: ${error.message}`, 'error');
                         hideLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
                         return;
                     }
                 }
                 
+                console.log('✅ All methods verified:', verificationResults);
+                
+                // ✅ ПРОВЕРКА: Ждем немного, чтобы backend успел обновить статусы кодов
+                // Это важно для корректной работы getVerificationStatus
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
                 // Все коды верны - завершаем вход
-                const loginResponse = await apiCall('/api/auth/nfa/complete', {
-                    method: 'POST',
-                    body: JSON.stringify({ userId: pendingNFAUserId })
-                });
+                let loginResponse;
+                try {
+                    loginResponse = await apiCall('/api/auth/nfa/complete', {
+                        method: 'POST',
+                        body: JSON.stringify({ userId: pendingNFAUserId })
+                    });
+                } catch (error) {
+                    // Если ошибка о том, что не все методы подтверждены, проверяем статус
+                    if (error.message && error.message.includes('Не все nFA методы подтверждены')) {
+                        console.error('❌ nFA complete error:', error.message);
+                        console.log('🔍 Проверяем статус верификации...');
+                        
+                        // Пробуем еще раз через небольшую задержку
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        try {
+                            loginResponse = await apiCall('/api/auth/nfa/complete', {
+                                method: 'POST',
+                                body: JSON.stringify({ userId: pendingNFAUserId })
+                            });
+                        } catch (retryError) {
+                            console.error('❌ Retry failed:', retryError);
+                            showMessage(`Ошибка верификации nFA: ${error.message}`, 'error');
+                            hideLoading('nfaBtn', 'nfaBtnText', 'nfaLoading');
+                            return;
+                        }
+                    } else {
+                        throw error;
+                    }
+                }
                 
                 // nFA successful
                 authToken = loginResponse.accessToken;
@@ -2609,6 +2956,53 @@
                 window.history.replaceState({}, document.title, cleanUrl);
                 
                 showMessage('Многофакторная аутентификация пройдена!', 'success');
+                
+                // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+                // Проверяем параметры из URL, sessionStorage и cookies (в порядке приоритета)
+                const urlParams = new URLSearchParams(window.location.search);
+                const oauthFlowFromUrl = urlParams.get('oauth_flow') === 'true';
+                const returnToFromUrl = urlParams.get('return_to');
+                
+                const oauthFlowFromStorage = sessionStorage.getItem('oauth_flow') === 'true';
+                const returnToFromStorage = sessionStorage.getItem('return_to');
+                const clientIdFromStorage = sessionStorage.getItem('oauth_client_id');
+                
+                // Проверяем cookies на наличие OAuth параметров
+                const cookies = document.cookie.split(';');
+                const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+                const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                
+                // Приоритет: URL > sessionStorage > cookies
+                const oauthFlow = oauthFlowFromUrl || oauthFlowFromStorage || (oauthClientIdCookie || oauthRedirectUriCookie ? true : false);
+                const returnTo = returnToFromUrl || returnToFromStorage || (oauthRedirectUriCookie ? '/api/oauth/authorize' : null);
+                
+                console.log('🔍 [handleNFA] OAuth flow check:', {
+                    oauthFlowFromUrl,
+                    returnToFromUrl,
+                    oauthFlowFromStorage,
+                    returnToFromStorage,
+                    clientIdFromStorage,
+                    hasOAuthCookies: !!(oauthClientIdCookie || oauthRedirectUriCookie),
+                    finalOAuthFlow: oauthFlow,
+                    finalReturnTo: returnTo
+                });
+                
+                // Проверяем как старый формат (/oauth/authorize), так и новый (/api/oauth/authorize)
+                if (oauthFlow && (returnTo === '/oauth/authorize' || returnTo === '/api/oauth/authorize')) {
+                    console.log('🔄 OAuth flow detected after nFA, redirecting to /api/oauth/authorize');
+                    
+                    // Сохраняем токен в cookie для /oauth/authorize (аналогично Email/Telegram/GitHub)
+                    document.cookie = `temp_access_token=${authToken}; path=/; max-age=60; SameSite=Lax`;
+                    console.log('✅ Token saved to temp_access_token cookie for OAuth flow');
+                    
+                    setTimeout(() => {
+                        isRedirecting = true;
+                        // ✅ ИСПРАВЛЕНИЕ: API_BASE_URL не содержит /api, нужно добавить
+                        const apiBaseUrl = window.API_BASE_URL || 'https://vselena.ldmco.ru';
+                        window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
+                    }, 500);
+                    return;
+                }
                 
                 // Redirect based on role - используем прямой редирект на dashboard с токеном в URL
                 // чтобы гарантировать, что токен будет доступен (как при OAuth callback)
@@ -2840,7 +3234,27 @@
 
                 showMessage('Двухфакторная аутентификация пройдена!', 'success');
                 
-                // Redirect based on role
+                // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+                const urlParams2FA = new URLSearchParams(window.location.search);
+                const oauthFlow2FA = urlParams2FA.get('oauth_flow') === 'true';
+                const returnTo2FA = urlParams2FA.get('return_to');
+                
+                if (oauthFlow2FA && (returnTo2FA === '/oauth/authorize' || returnTo2FA === '/api/oauth/authorize')) {
+                    console.log('🔄 OAuth flow detected after 2FA, redirecting to /api/oauth/authorize');
+                    
+                    // Сохраняем токен в cookie для /oauth/authorize (аналогично GitHub/Telegram)
+                    document.cookie = `temp_access_token=${authToken}; path=/; max-age=60; SameSite=Lax`;
+                    
+                    setTimeout(() => {
+                        isRedirecting = true;
+                        // ✅ ИСПРАВЛЕНИЕ: API_BASE_URL не содержит /api, нужно добавить
+                        const apiBaseUrl = window.API_BASE_URL || 'https://vselena.ldmco.ru';
+                        window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
+                    }, 1000);
+                    return;
+                }
+                
+                // Redirect based on role (обычный flow)
                 setTimeout(() => {
                     redirectBasedOnRole(response.user);
                 }, 1000);
@@ -3149,6 +3563,54 @@
                 return;
             }
             
+            // ✅ ПРОВЕРКА: Если мы на API endpoint, не обрабатываем это как frontend страницу
+            const currentPath = window.location.pathname;
+            if (currentPath.startsWith('/api/') || currentPath.startsWith('/oauth/')) {
+                console.log('⚠️ On API endpoint, skipping redirectBasedOnRole:', currentPath);
+                return;
+            }
+            
+            // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+            const urlParams = new URLSearchParams(window.location.search);
+            const cookies = document.cookie.split(';');
+            const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+            const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+            const hasOAuthCookies = !!(oauthClientIdCookie || oauthRedirectUriCookie);
+            const urlOAuthFlow = window.location.search.includes('oauth_flow=true') || window.location.search.includes('oauth_flow=1');
+            const urlHasClientId = window.location.search.includes('client_id=');
+            const urlHasReturnTo = window.location.search.includes('return_to=');
+            const oauthFlow = urlParams.get('oauth_flow') === 'true' || urlParams.get('oauth_flow') === '1';
+            const returnTo = urlParams.get('return_to');
+            
+            // Расширенная проверка OAuth flow - проверяем все возможные способы определения OAuth flow
+            const isOAuthFlow = urlOAuthFlow || urlHasClientId || urlHasReturnTo ||
+                                oauthFlow || 
+                                sessionStorage.getItem('oauth_flow') === 'true' || 
+                                sessionStorage.getItem('return_to')?.includes('/oauth/authorize') ||
+                                hasOAuthCookies;
+            
+            // Проверяем как старый формат (/oauth/authorize), так и новый (/api/oauth/authorize)
+            if (isOAuthFlow) {
+                console.log('🔄 OAuth flow detected, redirecting to /api/oauth/authorize');
+                console.log('🔄 OAuth params:', { oauthFlow, returnTo });
+                console.log('🔍 Current page:', currentPath);
+                
+                // Проверяем, есть ли токен в localStorage (пользователь мог уже авторизоваться)
+                const storedToken = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+                if (storedToken) {
+                    // Сохраняем токен в cookie для /oauth/authorize
+                    document.cookie = `temp_access_token=${storedToken}; path=/; max-age=60; SameSite=Lax`;
+                }
+                
+                // OAuth параметры уже сохранены в cookies на бэкенде при первом запросе
+                // Редиректим на /api/oauth/authorize (backend endpoint) для продолжения flow
+                isRedirecting = true;
+                // ✅ ИСПРАВЛЕНИЕ: API_BASE_URL не содержит /api, нужно добавить
+                const apiBaseUrl = window.API_BASE_URL || 'https://vselena.ldmco.ru';
+                window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
+                return;
+            }
+            
             const rolePriority = {
                 'super_admin': 5,
                 'admin': 4,
@@ -3212,6 +3674,43 @@
                 return;
             }
             
+            // ✅ ИСПРАВЛЕНИЕ: При OAuth flow не проверяем токен автоматически - всегда показываем форму входа
+            // Это позволяет пользователю войти с другим аккаунтом после выхода
+            const urlParams = new URLSearchParams(window.location.search);
+            // ✅ ИСПРАВЛЕНИЕ: Определяем cookies ПЕРЕД использованием
+            const cookies = document.cookie.split(';');
+            // Проверяем OAuth flow из URL, sessionStorage И cookies (которые могут быть установлены бэкендом)
+            const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+            const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+            const hasOAuthCookies = !!(oauthClientIdCookie || oauthRedirectUriCookie);
+            
+            // Проверяем URL параметры напрямую (более надежно)
+            const urlOAuthFlow = window.location.search.includes('oauth_flow=true') || window.location.search.includes('oauth_flow=1');
+            const urlHasClientId = window.location.search.includes('client_id=');
+            const urlHasReturnTo = window.location.search.includes('return_to=');
+            
+            const isOAuthFlow = urlOAuthFlow || urlHasClientId || urlHasReturnTo ||
+                                urlParams.get('oauth_flow') === 'true' || urlParams.get('oauth_flow') === '1' || 
+                                sessionStorage.getItem('oauth_flow') === 'true' || 
+                                sessionStorage.getItem('return_to')?.includes('/oauth/authorize') ||
+                                hasOAuthCookies; // Если есть OAuth cookies - это OAuth flow
+            
+            if (isOAuthFlow) {
+                console.log('🔄 OAuth flow detected in verifyTokenAndRedirect - skipping automatic token verification (allows switching accounts)');
+                return; // Не проверяем токен при OAuth flow - показываем форму входа
+            }
+            
+            // ✅ ИСПРАВЛЕНИЕ: Проверяем, нет ли только temp_access_token в cookies без localStorage токена
+            // Это может быть остаток от OAuth flow, который нужно очистить
+            const tempTokenCookie = cookies.find(c => c.trim().startsWith('temp_access_token='));
+            const authToken = localStorage.getItem('authToken') || localStorage.getItem('accessToken');
+            
+            if (!authToken && tempTokenCookie) {
+                console.log('🧹 Found temp_access_token cookie but no localStorage token - clearing and aborting redirect');
+                document.cookie = 'temp_access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
+                return; // Не делаем редирект, если нет валидного токена
+            }
+            
             try {
                 const response = await apiCall('/api/auth/me', { method: 'GET' });
                 currentUser = response;
@@ -3221,7 +3720,10 @@
                     } catch (error) {
                 console.error('Token verification failed:', error);
                 localStorage.removeItem('authToken');
+                localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
+                // ✅ ИСПРАВЛЕНИЕ: Очищаем также cookies при ошибке верификации
+                document.cookie = 'temp_access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax';
             }
         }
 

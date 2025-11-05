@@ -217,12 +217,19 @@ export class TelegramTwoFactorService {
       }
 
       // Отмечаем код как использованный и устанавливаем время подтверждения
-      await this.twoFactorCodeRepo.update(codeRecord.id, { 
-        status: 'used' as any,
-        verifiedAt: new Date()
-      });
-
+      // ✅ ИСПРАВЛЕНИЕ: Используем save() вместо update() для гарантии обновления
+      const verifiedAtTime = new Date();
+      codeRecord.status = 'used' as any;
+      codeRecord.verifiedAt = verifiedAtTime;
+      
+      const savedCode = await this.twoFactorCodeRepo.save(codeRecord);
+      
+      // ✅ ПРОВЕРКА: Проверяем, что код действительно обновлен в БД
+      const verifyCode = await this.twoFactorCodeRepo.findOne({ where: { id: codeRecord.id } });
       console.log(`✅ Telegram 2FA код подтвержден для пользователя ${userId}`);
+      console.log(`🔍 [verifyTelegramCode] verifiedAt до save: ${verifiedAtTime.toISOString()}`);
+      console.log(`🔍 [verifyTelegramCode] verifiedAt после save (savedCode): ${savedCode.verifiedAt ? savedCode.verifiedAt.toISOString() : 'null'}`);
+      console.log(`🔍 [verifyTelegramCode] verifiedAt после save (из БД): ${verifyCode?.verifiedAt ? (verifyCode.verifiedAt instanceof Date ? verifyCode.verifiedAt.toISOString() : new Date(verifyCode.verifiedAt).toISOString()) : 'null'}`);
 
       return {
         success: true,

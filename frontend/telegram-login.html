@@ -339,9 +339,35 @@
 
         console.log('🌐 API_BASE:', API_BASE);
 
+        // Защита от повторных вызовов
+        let isProcessingTelegramAuth = false;
+        
         // Telegram login callback
         async function onTelegramAuth(user) {
-            console.log('Telegram user data:', user);
+            // ✅ ПРОВЕРКА: Валидация user объекта перед обработкой
+            if (!user || !user.id || !user.first_name) {
+                console.log('⚠️ Invalid Telegram user data received, ignoring:', user);
+                return;
+            }
+            
+            // Защита от повторных вызовов
+            if (isProcessingTelegramAuth) {
+                console.log('⚠️ Telegram auth already processing, ignoring duplicate call');
+                return;
+            }
+            
+            // ✅ ПРОВЕРКА: Не обрабатываем автоматические вызовы при загрузке страницы
+            // Проверяем, что страница полностью загружена и прошло минимум 500ms после загрузки
+            const pageLoadTime = performance.timing?.loadEventEnd || Date.now();
+            const timeSinceLoad = Date.now() - pageLoadTime;
+            if (timeSinceLoad < 500) {
+                console.log('⚠️ Telegram auth called too early after page load, ignoring (time since load:', timeSinceLoad, 'ms)');
+                return;
+            }
+            
+            isProcessingTelegramAuth = true;
+            console.log('✅ Telegram auth callback triggered with valid user:', user);
+            console.log('📊 Time since page load:', timeSinceLoad, 'ms');
             document.getElementById('loading').style.display = 'block';
             
             // Check if this is a binding request
@@ -363,12 +389,34 @@
             
             // Send request
             try {
+                // Проверяем, что API_BASE определен
+                if (!API_BASE) {
+                    console.error('❌ API_BASE is not defined');
+                    alert('Ошибка: API базовый URL не определен');
+                    document.getElementById('loading').style.display = 'none';
+                    isProcessingTelegramAuth = false;
+                    return;
+                }
+                
+                console.log('📤 Sending Telegram login request to:', `${API_BASE}/auth/multi/telegram-login`);
+                
                 const response = await fetch(`${API_BASE}/auth/multi/telegram-login`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(requestBody),
+                    // Используем AbortController для совместимости с браузерами, которые не поддерживают AbortSignal.timeout
+                    signal: (() => {
+                        try {
+                            return AbortSignal.timeout(30000); // Таймаут 30 секунд
+                        } catch (e) {
+                            // Fallback для старых браузеров
+                            const controller = new AbortController();
+                            setTimeout(() => controller.abort(), 30000);
+                            return controller.signal;
+                        }
+                    })()
                 });
                 
                 // Получаем данные ответа
@@ -392,6 +440,7 @@
                         }
                         alert('Ошибка входа: ' + errorMessage);
                         document.getElementById('loading').style.display = 'none';
+                        isProcessingTelegramAuth = false;
                         return;
                     }
                     
@@ -410,12 +459,14 @@
                         console.error('❌ Response text that failed to parse:', responseText);
                         alert('Ошибка обработки ответа сервера: ' + parseError.message);
                         document.getElementById('loading').style.display = 'none';
+                        isProcessingTelegramAuth = false;
                         return;
                     }
                 } catch (readError) {
                     console.error('❌ Error reading response:', readError);
                     alert('Ошибка чтения ответа сервера: ' + readError.message);
                     document.getElementById('loading').style.display = 'none';
+                    isProcessingTelegramAuth = false;
                     return;
                 }
                 
@@ -450,24 +501,109 @@
                     });
                     // Очищаем флаг перед редиректом
                     sessionStorage.removeItem('nfaCodesSent');
-                    // Выполняем редирект
-                    const redirectUrl = `index.html?nfa=true&userId=${userId}&methods=${methodsParam}`;
-                    console.log('🔄 About to redirect to:', redirectUrl);
-                    window.location.href = redirectUrl;
+                    
+                    // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Если мы в OAuth flow, сохраняем параметры в sessionStorage и добавляем в URL
+                    // Проверяем параметры из ответа сервера (если backend вернул oauthFlow флаг)
+                    const oauthFlowFromResponse = data.oauthFlow === true || data.oauthFlow === 'true';
+                    const returnToFromResponse = data.returnTo;
+                    const clientIdFromResponse = data.clientId;
+                    
+                    // Также проверяем параметры из URL и sessionStorage (для обратной совместимости)
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const oauthFlowFromUrl = urlParams.get('oauth_flow') === 'true';
+                    const returnToFromUrl = urlParams.get('return_to');
+                    const clientIdFromUrl = urlParams.get('client_id');
+                    
+                    const storedOAuthFlow = sessionStorage.getItem('oauth_flow') === 'true';
+                    const storedReturnTo = sessionStorage.getItem('return_to');
+                    const storedClientId = sessionStorage.getItem('oauth_client_id');
+                    
+                    // Приоритет: ответ сервера > URL > sessionStorage
+                    const finalOAuthFlow = oauthFlowFromResponse || oauthFlowFromUrl || storedOAuthFlow;
+                    const finalReturnTo = returnToFromResponse || returnToFromUrl || storedReturnTo;
+                    const finalClientId = clientIdFromResponse || clientIdFromUrl || storedClientId;
+                    
+                    // Сохраняем OAuth параметры в sessionStorage
+                    if (finalOAuthFlow && finalReturnTo) {
+                        console.log('🔄 [Telegram nFA] Saving OAuth flow params to sessionStorage:', { oauthFlow: finalOAuthFlow, returnTo: finalReturnTo, clientId: finalClientId });
+                        sessionStorage.setItem('oauth_flow', 'true');
+                        sessionStorage.setItem('return_to', finalReturnTo);
+                        if (finalClientId) {
+                            sessionStorage.setItem('oauth_client_id', finalClientId);
+                        }
+                    }
+                    
+                    // Выполняем редирект с OAuth параметрами в URL (если есть)
+                    const redirectUrl = new URL(`index.html?nfa=true&userId=${userId}&methods=${methodsParam}`, window.location.origin);
+                    if (finalOAuthFlow && finalReturnTo) {
+                        redirectUrl.searchParams.set('oauth_flow', 'true');
+                        redirectUrl.searchParams.set('return_to', finalReturnTo);
+                        if (finalClientId) {
+                            redirectUrl.searchParams.set('client_id', finalClientId);
+                        }
+                    }
+                    
+                    console.log('🔄 About to redirect to:', redirectUrl.toString());
+                    isProcessingTelegramAuth = false;
+                    window.location.href = redirectUrl.toString();
                     return;
                 }
                 
                 console.log('Not nFA, checking for accessToken...');
                 
                 if (data.accessToken) {
-                    console.log('AccessToken found, setting tokens and redirecting to dashboard');
+                    console.log('AccessToken found, setting tokens');
                     localStorage.setItem('authToken', data.accessToken);
                     localStorage.setItem('accessToken', data.accessToken);
                     if (data.refreshToken) {
                         localStorage.setItem('refreshToken', data.refreshToken);
                     }
                     
-                    // Redirect to dashboard
+                    // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+                    // Проверяем параметры из ответа сервера (если backend вернул oauthFlow флаг)
+                    const oauthFlowFromResponse = data.oauthFlow === true || data.oauthFlow === 'true';
+                    const returnToFromResponse = data.returnTo;
+                    
+                    // Также проверяем параметры из URL и sessionStorage (для обратной совместимости)
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const oauthFlowFromUrl = urlParams.get('oauth_flow') === 'true';
+                    const returnToFromUrl = urlParams.get('return_to');
+                    
+                    const storedOAuthFlow = sessionStorage.getItem('oauth_flow') === 'true';
+                    const storedReturnTo = sessionStorage.getItem('return_to');
+                    
+                    // Приоритет: ответ сервера > URL > sessionStorage
+                    const finalOAuthFlow = oauthFlowFromResponse || oauthFlowFromUrl || storedOAuthFlow;
+                    const finalReturnTo = returnToFromResponse || returnToFromUrl || storedReturnTo;
+                    
+                    if (finalOAuthFlow && (finalReturnTo === '/oauth/authorize' || finalReturnTo === '/api/oauth/authorize')) {
+                        console.log('🔄 OAuth flow detected after Telegram login, redirecting to /api/oauth/authorize');
+                        console.log('🔄 OAuth params:', { 
+                            fromResponse: { oauthFlow: oauthFlowFromResponse, returnTo: returnToFromResponse },
+                            fromUrl: { oauthFlow: oauthFlowFromUrl, returnTo: returnToFromUrl },
+                            fromStorage: { oauthFlow: storedOAuthFlow, returnTo: storedReturnTo },
+                            final: { oauthFlow: finalOAuthFlow, returnTo: finalReturnTo }
+                        });
+                        
+                        // Сохраняем токен в cookie для /oauth/authorize (аналогично GitHub)
+                        // Backend будет использовать temp_access_token cookie для авторизации
+                        document.cookie = `temp_access_token=${data.accessToken}; path=/; max-age=60; SameSite=Lax`;
+                        
+                        // Очищаем sessionStorage
+                        sessionStorage.removeItem('oauth_flow');
+                        sessionStorage.removeItem('return_to');
+                        sessionStorage.removeItem('oauth_client_id');
+                        
+                        // Редиректим на /api/oauth/authorize для продолжения OAuth flow
+                        isProcessingTelegramAuth = false;
+                        const apiBaseUrl = API_BASE.replace('/api', '') || 'https://vselena.ldmco.ru';
+                        window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
+                        return;
+                    }
+                    
+                    // Обычный flow - редиректим на dashboard
+                    isProcessingTelegramAuth = false;
+                    console.log('Redirecting to dashboard (not OAuth flow)');
                     window.location.href = 'dashboard.html';
                 } else {
                     console.error('❌ No accessToken and no requiresNFA, showing error.');
@@ -483,14 +619,27 @@
                         alert('Ошибка входа: Неизвестный формат ответа. Проверьте консоль браузера для деталей.');
                     }
                     document.getElementById('loading').style.display = 'none';
+                    isProcessingTelegramAuth = false;
                 }
             } catch (error) {
                 console.error('❌ Login error (catch block):', error);
                 console.error('❌ Error name:', error.name);
                 console.error('❌ Error message:', error.message);
                 console.error('❌ Error stack:', error.stack);
-                alert('Ошибка входа: ' + (error.message || 'Неизвестная ошибка'));
+                
+                // Обрабатываем разные типы ошибок
+                let errorMessage = 'Неизвестная ошибка';
+                if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                    errorMessage = 'Превышено время ожидания ответа от сервера. Попробуйте еще раз.';
+                } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    errorMessage = 'Ошибка сети. Проверьте подключение к интернету и попробуйте еще раз.';
+                } else {
+                    errorMessage = error.message || 'Неизвестная ошибка';
+                }
+                
+                alert('Ошибка входа: ' + errorMessage);
                 document.getElementById('loading').style.display = 'none';
+                isProcessingTelegramAuth = false;
             }
         }
 

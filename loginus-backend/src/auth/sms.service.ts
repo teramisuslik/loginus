@@ -273,34 +273,135 @@ export class SmsService {
       
       console.log(`📤 [sendTelegramMessage] Request body: ${JSON.stringify({ ...requestBody, text: requestBody.text.substring(0, 50) + '...' })}`);
       
-      const response = await fetch(`https://api.telegram.org/bot${this.telegramBotToken}/sendMessage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      const data = await response.json();
+      // ✅ ИСПРАВЛЕНИЕ: Добавляем таймаут и повторные попытки для надежности доставки
+      // Telegram API может иметь задержки, поэтому увеличиваем таймаут и добавляем retry логику
+      const maxRetries = 3;
+      let lastError: any = null;
       
-      console.log(`📤 [sendTelegramMessage] Telegram API ответ для chatId ${chatId}:`, JSON.stringify(data, null, 2));
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`📤 [sendTelegramMessage] Попытка ${attempt} из ${maxRetries} для chatId ${chatId}`);
+          
+          // Создаем AbortController для таймаута (30 секунд на попытку)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          
+          const response = await fetch(`https://api.telegram.org/bot${this.telegramBotToken}/sendMessage`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
+          
+          const data = await response.json();
       
-      if (data.ok) {
-        console.log(`✅ [sendTelegramMessage] Telegram сообщение отправлено успешно в чат ${chatId}`);
-        return { success: true, message: 'Сообщение отправлено' };
-      } else {
-        console.error('❌ [sendTelegramMessage] Ошибка отправки Telegram сообщения:', JSON.stringify(data));
-        // Детализируем ошибки
-        let errorMessage = data.description || 'Ошибка отправки';
-        if (data.error_code === 403) {
+          // ✅ УЛУЧШЕННОЕ ЛОГИРОВАНИЕ: Логируем полный ответ для диагностики
+          console.log(`📤 [sendTelegramMessage] Telegram API ответ для chatId ${chatId} (попытка ${attempt}):`, JSON.stringify(data, null, 2));
+          console.log(`📤 [sendTelegramMessage] Статус ответа: ok=${data.ok}, error_code=${data.error_code || 'none'}, message_id=${data.result?.message_id || 'none'}`);
+          
+          // Обработка ошибки 429 (Too Many Requests) - повторяем запрос с задержкой
+          if (data.error_code === 429) {
+            const retryAfter = data.parameters?.retry_after || 1; // Задержка в секундах
+            console.warn(`⚠️ [sendTelegramMessage] Telegram API rate limit (429), ждем ${retryAfter} секунд перед следующей попыткой`);
+            
+            // Если это не последняя попытка, ждем и повторяем
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+              continue; // Повторяем попытку
+            } else {
+              // Последняя попытка - возвращаем ошибку
+              return { success: false, message: `Rate limit после ${maxRetries} попыток. Попробуйте позже.` };
+            }
+          }
+          
+          // ✅ ИСПРАВЛЕНИЕ: Проверяем статус ответа более тщательно
+          if (data.ok === true) {
+            console.log(`✅ [sendTelegramMessage] Telegram API вернул ok=true для chatId ${chatId} (попытка ${attempt})`);
+            
+            // ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Убеждаемся, что message_id присутствует в ответе
+            // Это означает, что Telegram действительно получил и обработал сообщение
+            if (data.result && data.result.message_id) {
+              console.log(`✅ [sendTelegramMessage] Подтверждение доставки: message_id=${data.result.message_id}, chat_id=${data.result.chat?.id || 'unknown'}`);
+              console.log(`✅ [sendTelegramMessage] Полная информация о сообщении:`, JSON.stringify({
+                message_id: data.result.message_id,
+                chat_id: data.result.chat?.id,
+                date: data.result.date,
+                text_length: data.result.text?.length
+              }));
+              return { success: true, message: 'Сообщение отправлено' };
+            } else {
+              console.warn(`⚠️ [sendTelegramMessage] Ответ ok=true, но message_id отсутствует. Структура ответа:`, JSON.stringify(data.result || 'null'));
+              // Если это не последняя попытка, повторяем
+              if (attempt < maxRetries) {
+                console.log(`🔄 [sendTelegramMessage] Повторяем попытку ${attempt + 1} из-за отсутствия message_id`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Короткая задержка перед повтором
+                continue;
+              } else {
+                // Последняя попытка - все равно считаем успешным, если ok=true
+                console.warn(`⚠️ [sendTelegramMessage] Все попытки исчерпаны, но ok=true. Возвращаем успех без message_id.`);
+                return { success: true, message: 'Сообщение отправлено (подтверждение доставки не получено)' };
+              }
+            }
+          } else {
+            // Ошибка от Telegram API
+            console.error(`❌ [sendTelegramMessage] Ошибка отправки Telegram сообщения (попытка ${attempt}):`, JSON.stringify(data));
+            lastError = data;
+            
+            // Если это не последняя попытка и ошибка не критическая, повторяем
+            if (attempt < maxRetries) {
+              const errorCode = data.error_code;
+              // Не повторяем для критических ошибок (403, 400, 401)
+              if (errorCode === 403 || errorCode === 400 || errorCode === 401) {
+                break; // Выходим из цикла, не повторяем
+              }
+              
+              // Задержка перед следующей попыткой (1-2 секунды)
+              const delay = attempt * 1000; // Экспоненциальная задержка
+              console.log(`⏳ [sendTelegramMessage] Ожидание ${delay}ms перед повторной попыткой...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+          }
+        } catch (fetchError: any) {
+          console.error(`❌ [sendTelegramMessage] Ошибка сети при попытке ${attempt}:`, fetchError.message);
+          lastError = fetchError;
+          
+          // Если это не последняя попытка и ошибка не критическая (таймаут или сеть), повторяем
+          if (attempt < maxRetries && (fetchError.name === 'AbortError' || fetchError.message?.includes('timeout') || fetchError.message?.includes('network'))) {
+            const delay = attempt * 1000;
+            console.log(`⏳ [sendTelegramMessage] Ожидание ${delay}ms перед повторной попыткой из-за сетевой ошибки...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          
+          // Если это последняя попытка или критическая ошибка, выходим
+          if (attempt === maxRetries) {
+            break;
+          }
+        }
+      }
+      
+      // Если мы дошли сюда, все попытки исчерпаны
+      console.error('❌ [sendTelegramMessage] Все попытки исчерпаны для chatId:', chatId);
+      
+      // Детализируем последнюю ошибку
+      if (lastError) {
+        let errorMessage = lastError.description || lastError.message || 'Ошибка отправки после всех попыток';
+        if (lastError.error_code === 403) {
           errorMessage = 'Бот заблокирован пользователем или не может начать диалог. Убедитесь, что вы авторизовались через Telegram Login Widget.';
-        } else if (data.error_code === 400) {
+        } else if (lastError.error_code === 400) {
           errorMessage = 'Неверный chatId или пользователь не авторизовался через Telegram Login Widget';
-        } else if (data.error_code === 401) {
+        } else if (lastError.error_code === 401) {
           errorMessage = 'Неверный токен Telegram бота';
         }
         return { success: false, message: errorMessage };
       }
+      
+      return { success: false, message: 'Ошибка отправки после всех попыток' };
     } catch (error) {
       console.error('❌ [sendTelegramMessage] Ошибка при отправке Telegram сообщения:', error);
       return { success: false, message: `Ошибка сети: ${error.message}` };

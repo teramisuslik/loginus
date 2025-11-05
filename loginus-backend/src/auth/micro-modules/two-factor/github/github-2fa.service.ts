@@ -143,7 +143,7 @@ export class GitHubTwoFactorService {
       // Отправляем email с кодом на email из GitHub профиля
       console.log(`📧 [sendGitHubCode] Отправка кода на email: ${githubEmail}`);
       try {
-        await this.emailService.sendVerificationCode(githubEmail, code, 'github');
+        await this.emailService.sendVerificationCode(githubEmail, code);
         console.log(`✅ [sendGitHubCode] Email успешно отправлен на ${githubEmail}`);
       } catch (emailError) {
         console.error(`❌ [sendGitHubCode] Ошибка отправки email: ${emailError.message}`);
@@ -226,10 +226,10 @@ export class GitHubTwoFactorService {
       }
 
       // Отмечаем код как использованный и устанавливаем время подтверждения
-      await this.twoFactorCodeRepo.update(codeRecord.id, { 
-        status: 'used' as any,
-        verifiedAt: new Date()
-      });
+      // ✅ ИСПРАВЛЕНИЕ: Используем save() вместо update() для гарантии обновления
+      codeRecord.status = 'used' as any;
+      codeRecord.verifiedAt = new Date();
+      await this.twoFactorCodeRepo.save(codeRecord);
 
       console.log(`✅ GitHub 2FA код подтвержден для пользователя ${userId}`);
 
