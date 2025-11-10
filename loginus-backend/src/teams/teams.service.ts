@@ -61,6 +61,7 @@ export class TeamsService {
     console.log(`✅ Team created: ${savedTeam.name} (ID: ${savedTeam.id})`);
 
     // Создаем системные роли для команды
+    // ✅ ВАЖНО: createSystemRoles уже синхронизирует права из глобальной таблицы roles
     console.log(`🔧 About to create system roles for team: ${savedTeam.id}`);
     await this.createSystemRoles(savedTeam.id);
     console.log(`✅ System roles creation completed for team: ${savedTeam.id}`);
@@ -73,55 +74,81 @@ export class TeamsService {
 
   /**
    * Создать системные роли для команды
+   * Берет права из системных глобальных ролей
    */
   private async createSystemRoles(teamId: string): Promise<void> {
     console.log(`🔧 Creating system roles for team: ${teamId}`);
     
-    const systemRoles = [
-      {
-        name: 'super_admin',
-        description: 'Суперадминистратор команды',
-        permissions: ['teams.manage', 'users.invite', 'users.manage', 'users.remove', 'roles.manage'],
-        level: 100,
-      },
-      {
-        name: 'admin',
-        description: 'Администратор команды',
-        permissions: ['teams.manage', 'users.invite', 'users.manage', 'users.remove'],
-        level: 80,
-      },
-      {
-        name: 'manager',
-        description: 'Менеджер команды',
-        permissions: ['teams.manage', 'users.invite', 'users.manage'],
-        level: 60,
-      },
-      {
-        name: 'editor',
-        description: 'Редактор команды',
-        permissions: ['teams.read', 'content.create', 'content.edit'],
-        level: 40,
-      },
-      {
-        name: 'viewer',
-        description: 'Наблюдатель команды',
-        permissions: ['teams.read'],
-        level: 20,
-      },
-    ];
+    // Получаем все глобальные роли (системные и кастомные)
+    const globalRoles = await this.rolesRepo.find({
+      where: { isGlobal: true },
+      relations: ['permissions'],
+    });
 
-    for (const roleData of systemRoles) {
-      console.log(`🔧 Creating role: ${roleData.name} for team: ${teamId}`);
-      const role = this.teamRoleRepo.create({
-        ...roleData,
-        teamId,
-        isSystem: true,
-      });
-      const savedRole = await this.teamRoleRepo.save(role);
-      console.log(`✅ Role created: ${savedRole.name} (ID: ${savedRole.id})`);
+    console.log(`🔧 Found ${globalRoles.length} global system roles to copy`);
+
+    // Уровни ролей
+    const ROLE_LEVELS: Record<string, number> = {
+      super_admin: 100,
+      admin: 80,
+      manager: 60,
+      editor: 40,
+      viewer: 20,
+    };
+
+    // Копируем каждую роль в team_roles
+    for (const globalRole of globalRoles) {
+      try {
+        // Проверяем, нет ли уже такой роли
+        const existingRole = await this.teamRoleRepo.findOne({
+          where: { teamId, name: globalRole.name },
+        });
+
+        if (existingRole) {
+          // ✅ ВАЖНО: ВСЕГДА обновляем права из глобальной таблицы roles
+          // Это гарантирует синхронизацию при создании новой команды
+          const newPermissionNames = globalRole.permissions?.map(p => p.name) || [];
+          const currentPermissionNames = existingRole.permissions || [];
+          
+          // Сравниваем массивы прав (приводим к отсортированным массивам для сравнения)
+          const currentSorted = [...currentPermissionNames].sort().join(',');
+          const newSorted = [...newPermissionNames].sort().join(',');
+          
+          // Обновляем права, даже если они кажутся одинаковыми (для гарантии синхронизации)
+          existingRole.permissions = newPermissionNames;
+          existingRole.isSystem = globalRole.isSystem || false;
+          existingRole.level = ROLE_LEVELS[globalRole.name] || 0; // Обновляем level
+          
+          if (currentSorted !== newSorted) {
+            console.log(`🔄 [TeamsService] Updating permissions for role ${globalRole.name} in team ${teamId}`);
+            await this.teamRoleRepo.save(existingRole);
+            console.log(`✅ [TeamsService] Updated role ${globalRole.name} permissions in team ${teamId}`);
+          } else {
+            // Сохраняем даже если права одинаковые, чтобы обновить level и isSystem
+            await this.teamRoleRepo.save(existingRole);
+            console.log(`✅ [TeamsService] Synced role ${globalRole.name} in team ${teamId} (permissions unchanged)`);
+          }
+          continue;
+        }
+
+        const teamRole = this.teamRoleRepo.create({
+          name: globalRole.name,
+          description: globalRole.description || '',
+          teamId,
+          permissions: globalRole.permissions?.map(p => p.name) || [],
+          level: ROLE_LEVELS[globalRole.name] || 0,
+          isSystem: globalRole.isSystem || false,
+        });
+
+        const savedRole = await this.teamRoleRepo.save(teamRole);
+        console.log(`✅ [TeamsService] Copied role ${savedRole.name} (level ${savedRole.level}) for team ${teamId}`);
+      } catch (error) {
+        console.error(`❌ [TeamsService] Error copying role ${globalRole.name}:`, error);
+        throw error;
+      }
     }
     
-    console.log(`✅ System roles created for team: ${teamId}`);
+    console.log(`✅ [TeamsService] All ${globalRoles.length} global roles copied to team ${teamId}`);
   }
 
   /**

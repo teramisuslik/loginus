@@ -878,6 +878,11 @@
                     <textarea id="roleDescription" class="form-input" placeholder="Введите описание роли" rows="3"></textarea>
                 </div>
                 <div class="form-group">
+                    <label for="roleLevel">Уровень роли (0-100):</label>
+                    <input type="number" id="roleLevel" class="form-input" placeholder="Введите уровень роли" min="0" max="100" value="0">
+                    <small style="color: #666; font-size: 12px;">Уровень определяет иерархию ролей. Примеры: super_admin=100, admin=80, manager=60, editor=40, viewer=20</small>
+                </div>
+                <div class="form-group">
                     <label>Выберите права для роли:</label>
                     <div id="permissionsList" class="permissions-checkbox-list">
                         <!-- Права будут загружены динамически -->
@@ -1824,14 +1829,23 @@
 
         function closeCreateRoleModal() {
             document.getElementById('createRoleModal').style.display = 'none';
+            // Очищаем поля формы
+            document.getElementById('roleName').value = '';
+            document.getElementById('roleDescription').value = '';
+            document.getElementById('roleLevel').value = '0';
+            // Снимаем все чекбоксы
+            const checkboxes = document.querySelectorAll('#permissionsList input[type="checkbox"]');
+            checkboxes.forEach(checkbox => checkbox.checked = false);
         }
 
         function saveNewRole() {
             const roleName = document.getElementById('roleName').value;
             const roleDescription = document.getElementById('roleDescription').value;
+            const roleLevel = parseInt(document.getElementById('roleLevel').value) || 0;
             
             console.log('📝 Role name:', roleName);
             console.log('📝 Role description:', roleDescription);
+            console.log('📝 Role level:', roleLevel);
             
             if (!roleName) {
                 alert('Введите название роли');
@@ -1841,6 +1855,12 @@
             // Проверяем, что название содержит только латинские буквы, цифры и подчеркивания
             if (!/^[a-zA-Z0-9_]+$/.test(roleName)) {
                 alert('Название роли может содержать только латинские буквы, цифры и подчеркивания');
+                return;
+            }
+
+            // Проверяем уровень роли
+            if (roleLevel < 0 || roleLevel > 100) {
+                alert('Уровень роли должен быть от 0 до 100');
                 return;
             }
 
@@ -1858,7 +1878,8 @@
                 description: roleDescription,
                 isSystem: false,
                 isGlobal: true,
-                permissionIds: selectedPermissions
+                permissionIds: selectedPermissions,
+                level: roleLevel
             };
 
             console.log('📤 Sending role data:', roleData);

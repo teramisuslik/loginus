@@ -52,6 +52,31 @@ export class OAuthController {
     @Res() res: Response,
     @Req() req: Request,
   ) {
+    // ✅ ЛОГИРОВАНИЕ: Логируем все входящие данные для отладки
+    console.log(`🔍 [OAuth] ========== AUTHORIZE REQUEST ==========`);
+    console.log(`🔍 [OAuth] Query params:`, {
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: responseType,
+      scope: scope,
+      state: state,
+    });
+    console.log(`🔍 [OAuth] Cookies:`, {
+      oauth_flow_active: req.cookies?.oauth_flow_active,
+      oauth_client_id: req.cookies?.oauth_client_id,
+      oauth_redirect_uri: req.cookies?.oauth_redirect_uri,
+      oauth_scope: req.cookies?.oauth_scope,
+      oauth_state_param: req.cookies?.oauth_state_param,
+      temp_access_token: req.cookies?.temp_access_token ? 'present' : 'missing',
+    });
+    console.log(`🔍 [OAuth] Request URL: ${req.url}`);
+    console.log(`🔍 [OAuth] Request method: ${req.method}`);
+    console.log(`🔍 [OAuth] Request headers:`, {
+      referer: req.headers.referer,
+      origin: req.headers.origin,
+      cookie: req.headers.cookie ? 'present' : 'missing',
+    });
+    
     // ✅ ВОССТАНОВЛЕНИЕ ПАРАМЕТРОВ ИЗ COOKIES: Если параметры не переданы в query, берем из cookies
     // Это нужно для случая, когда пользователь авторизовался и редиректится на /oauth/authorize
     const finalClientId = clientId || req.cookies?.oauth_client_id;
@@ -59,6 +84,14 @@ export class OAuthController {
     const finalScope = scope || req.cookies?.oauth_scope || 'openid email profile';
     const finalState = state || req.cookies?.oauth_state_param;
     const finalResponseType = responseType || 'code';
+    
+    console.log(`🔍 [OAuth] Final params after restoration:`, {
+      client_id: finalClientId,
+      redirect_uri: finalRedirectUri,
+      scope: finalScope,
+      state: finalState,
+      response_type: finalResponseType,
+    });
 
     // Валидация параметров
     if (!finalClientId || !finalRedirectUri || !finalResponseType) {
@@ -70,10 +103,16 @@ export class OAuthController {
     }
 
     // Валидация клиента и redirect_uri
+    console.log(`🔍 [OAuth] Starting redirect URI validation...`);
     const isValidRedirect = await this.oauthService.validateRedirectUri(finalClientId, finalRedirectUri);
+    console.log(`🔍 [OAuth] Redirect URI validation result: ${isValidRedirect}`);
     if (!isValidRedirect) {
-      throw new BadRequestException('Invalid redirect_uri for this client');
+      console.error(`❌ [OAuth] Redirect URI validation FAILED!`);
+      console.error(`❌ [OAuth] Client ID: ${finalClientId}`);
+      console.error(`❌ [OAuth] Requested redirect URI: ${finalRedirectUri}`);
+      throw new BadRequestException(`Invalid redirect_uri for this client. Requested: ${finalRedirectUri}`);
     }
+    console.log(`✅ [OAuth] Redirect URI validation passed`);
 
     // Проверяем, авторизован ли пользователь
     // ✅ ПРОВЕРКА: Сначала проверяем temp_access_token из cookie (для GitHub/Telegram OAuth flow)
@@ -88,12 +127,15 @@ export class OAuthController {
     } | null = null;
 
     const tempToken = req.cookies?.temp_access_token;
+    console.log(`🔍 [OAuth] Checking temp_access_token cookie: ${tempToken ? 'present' : 'missing'}`);
     if (tempToken) {
       try {
         user = await this.oauthService.getUserInfo(tempToken);
+        console.log(`✅ [OAuth] User authenticated via temp_access_token: ${user?.email}`);
         // Очищаем временный токен из cookie
         res.clearCookie('temp_access_token');
       } catch (error) {
+        console.error(`❌ [OAuth] Failed to authenticate via temp_access_token:`, error.message);
         // Токен невалиден, продолжаем проверку
       }
     }
@@ -101,14 +143,25 @@ export class OAuthController {
     // Если temp_token не помог, проверяем Authorization header
     if (!user) {
       const authHeader = req.headers.authorization;
+      console.log(`🔍 [OAuth] Checking Authorization header: ${authHeader ? 'present' : 'missing'}`);
       if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
           const token = authHeader.substring(7);
           user = await this.oauthService.getUserInfo(token);
+          console.log(`✅ [OAuth] User authenticated via Authorization header: ${user?.email}`);
         } catch (error) {
+          console.error(`❌ [OAuth] Failed to authenticate via Authorization header:`, error.message);
           // Токен невалиден, пользователь не авторизован
         }
       }
+    }
+    
+    // ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Проверяем, может быть пользователь уже авторизован через сессию
+    // (если frontend передает токен через другой механизм)
+    if (!user) {
+      console.log(`🔍 [OAuth] No user found via temp_access_token or Authorization header`);
+      console.log(`🔍 [OAuth] All cookies:`, Object.keys(req.cookies || {}));
+      console.log(`🔍 [OAuth] All headers:`, Object.keys(req.headers).filter(k => k.toLowerCase().includes('auth') || k.toLowerCase().includes('cookie')));
     }
     
     // ✅ ПРОВЕРКА: Если пользователь не авторизован, но есть OAuth cookies,
@@ -116,6 +169,12 @@ export class OAuthController {
     // Но если cookies уже есть, значит параметры уже сохранены, просто продолжаем
 
     // Если пользователь не авторизован, сохраняем параметры OAuth и редиректим на страницу авторизации
+    console.log(`🔍 [OAuth] User authenticated: ${user ? 'yes' : 'no'}`);
+    console.log(`🔍 [OAuth] OAuth cookies present:`, {
+      oauth_flow_active: !!req.cookies?.oauth_flow_active,
+      oauth_client_id: !!req.cookies?.oauth_client_id,
+      oauth_redirect_uri: !!req.cookies?.oauth_redirect_uri,
+    });
     if (!user) {
       // Сохраняем параметры OAuth в cookie для последующего использования (используем финальные значения)
       // ✅ УСТАНОВКА ФЛАГА OAuth FLOW: Устанавливаем специальный флаг, что это реальный OAuth flow
@@ -167,6 +226,13 @@ export class OAuthController {
 
     // Пользователь авторизован - создаем authorization code
     // Используем финальные значения параметров (из query или cookies)
+    console.log(`✅ [OAuth] User is authenticated, creating authorization code`);
+    console.log(`🔍 [OAuth] Final params:`, {
+      clientId: finalClientId,
+      redirectUri: finalRedirectUri,
+      scope: finalScope,
+      state: finalState,
+    });
     const scopes = finalScope ? finalScope.split(' ') : ['openid', 'email', 'profile'];
     const code = await this.oauthService.createAuthorizationCode(
       user.id,

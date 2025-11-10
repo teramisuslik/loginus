@@ -148,7 +148,7 @@ export class ReferralService {
     // Получаем базовый URL из конфигурации или используем дефолтный
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 
                        this.configService.get<string>('APP_FRONTEND_URL') ||
-                       'https://vselena.ldmco.ru';
+                       'https://loginus.startapus.com';
     
     // Формируем полную реферальную ссылку
     const referralLink = `${frontendUrl}/index.html?ref=${referral.code}`;

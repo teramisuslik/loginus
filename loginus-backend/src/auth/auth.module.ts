@@ -35,6 +35,9 @@ import { VerificationCode } from './entities/verification-code.entity';
 import { AccountMergeRequest } from './entities/account-merge-request.entity';
 import { OAuthClient } from './entities/oauth-client.entity';
 import { AuthorizationCode } from './entities/authorization-code.entity';
+import { OrganizationMembership } from '../organizations/entities/organization-membership.entity';
+import { TeamMembership } from '../teams/entities/team-membership.entity';
+import { Permission } from '../rbac/entities/permission.entity';
 
 // Micro Modules
 import { FinalMicroModulesModule } from './micro-modules/final-micro-modules.module';
@@ -46,6 +49,7 @@ import { EmailCodeModule } from './micro-modules/email-code/email-code.module';
 import { NfaService } from './services/nfa.service';
 import { NfaController } from './controllers/nfa.controller';
 import { OAuthService } from './services/oauth.service';
+import { GitHubTwoFactorService } from './micro-modules/two-factor/github/github-2fa.service';
 
 @Module({
   imports: [
@@ -63,6 +67,10 @@ import { OAuthService } from './services/oauth.service';
       // ✅ OAuth ENTITIES
       OAuthClient,
       AuthorizationCode,
+      // ✅ Entities для расширенного OAuth userinfo
+      OrganizationMembership,
+      TeamMembership,
+      Permission,
     ]),
     PassportModule,
     JwtModule.registerAsync({

@@ -191,51 +191,12 @@ export class GitHubAuthService {
         };
       }
 
-      // Проверяем, есть ли пользователь с таким email
+      // ✅ ИСПРАВЛЕНИЕ: Не проверяем email при регистрации через GitHub
+      // Пользователь должен иметь возможность создать отдельный аккаунт через GitHub,
+      // даже если email уже используется другим аккаунтом
+      // Связывание аккаунтов должно происходить только явно через привязку (bind)
       const primaryEmail = emailData.find(email => email.primary)?.email;
-      this.logger.log(`Checking for user with email: ${primaryEmail}`);
-      
-      if (primaryEmail) {
-        const userByEmail = await this.findUserByEmail(primaryEmail);
-        this.logger.log(`Email lookup result: ${userByEmail ? 'found' : 'not found'}`);
-        
-        if (userByEmail) {
-          // Обновляем существующего пользователя, добавляя GitHub данные
-          this.logger.log(`Updating existing user with GitHub data: ${primaryEmail}`);
-          userByEmail.githubId = userData.id.toString();
-          userByEmail.githubUsername = userData.login;
-          userByEmail.githubVerified = true;
-          userByEmail.avatarUrl = userData.avatar_url;
-          
-          // ВАЖНО: Обновляем email на реальный из GitHub, если текущий email - псевдо-email
-          if (primaryEmail && (userByEmail.email?.includes('@telegram.local') || userByEmail.email?.includes('@github.local') || !userByEmail.emailVerified)) {
-            this.logger.log(`🔄 Обновляем email пользователя с ${userByEmail.email} на реальный из GitHub: ${primaryEmail}`);
-            userByEmail.email = primaryEmail;
-            userByEmail.emailVerified = true; // Email из GitHub считается подтвержденным
-          }
-          
-          // Обновляем доступные методы аутентификации
-          if (!userByEmail.availableAuthMethods.includes(AuthMethodType.GITHUB)) {
-            userByEmail.availableAuthMethods.push(AuthMethodType.GITHUB);
-          }
-          
-          // Обновляем метаданные OAuth
-          if (!userByEmail.oauthMetadata) {
-            userByEmail.oauthMetadata = {};
-          }
-          userByEmail.oauthMetadata.github = metadata;
-          
-          // Сохраняем обновленного пользователя
-          const updatedUser = await this.usersRepo.save(userByEmail);
-          this.logger.log(`✅ Updated user with GitHub data: ${updatedUser.id}, email: ${updatedUser.email}`);
-          
-          return {
-            success: true,
-            user: updatedUser,
-            alreadyLinked: true,
-          };
-        }
-      }
+      this.logger.log(`Creating new GitHub account for email: ${primaryEmail} (ignoring existing email accounts)`);
 
       // Создаем нового пользователя
       this.logger.log(`Creating new GitHub user for email: ${primaryEmail}`);
@@ -252,9 +213,20 @@ export class GitHubAuthService {
 
     } catch (error) {
       this.logger.error(`Ошибка обработки GitHub callback: ${error.message}`);
+      this.logger.error(`Stack trace: ${error.stack}`);
+      
+      // ✅ ИСПРАВЛЕНИЕ: Более детальное логирование ошибок
+      if (error.code === '23505' || error.message.includes('UNIQUE') || error.message.includes('duplicate')) {
+        this.logger.error(`❌ Ошибка уникальности: email уже используется другим аккаунтом`);
+        return {
+          success: false,
+          error: 'Email уже используется другим аккаунтом. Попробуйте привязать GitHub к существующему аккаунту.',
+        };
+      }
+      
       return {
         success: false,
-        error: 'Ошибка авторизации через GitHub',
+        error: `Ошибка авторизации через GitHub: ${error.message}`,
       };
     }
   }
@@ -399,7 +371,17 @@ export class GitHubAuthService {
     // Здесь должна быть логика создания нового пользователя в БД
     const primaryEmail = emailData.find(email => email.primary)?.email;
     // Если primary email не найден, берем первый verified email
-    const userEmail = primaryEmail || emailData.find(email => email.verified)?.email || `${userData.login}@github.local`;
+    let userEmail = primaryEmail || emailData.find(email => email.verified)?.email || `${userData.login}@github.local`;
+    
+    // ✅ ИСПРАВЛЕНИЕ: Проверяем, не используется ли email другим аккаунтом
+    // Если используется, создаем псевдо-email для нового аккаунта
+    const existingUserWithEmail = await this.findUserByEmail(userEmail);
+    if (existingUserWithEmail && !userEmail.includes('@github.local') && !userEmail.includes('@telegram.local')) {
+      this.logger.log(`⚠️ Email ${userEmail} уже используется аккаунтом ${existingUserWithEmail.id}, создаем псевдо-email для нового GitHub аккаунта`);
+      // Создаем уникальный псевдо-email на основе GitHub username
+      userEmail = `${userData.login}_${userData.id}@github.local`;
+      this.logger.log(`✅ Используем псевдо-email: ${userEmail}`);
+    }
     
     this.logger.log(`Creating GitHub user with email: ${userEmail} (primaryEmail: ${primaryEmail || 'not found'})`);
     
@@ -419,9 +401,24 @@ export class GitHubAuthService {
       emailVerified: true,
     });
 
-    const savedUser = await this.usersRepo.save(newUser);
-    this.logger.log(`Создан новый пользователь через GitHub: ${savedUser?.email || 'unknown'}`);
-    return savedUser;
+    try {
+      const savedUser = await this.usersRepo.save(newUser);
+      this.logger.log(`Создан новый пользователь через GitHub: ${savedUser?.email || 'unknown'}`);
+      return savedUser;
+    } catch (error) {
+      // ✅ ИСПРАВЛЕНИЕ: Обрабатываем ошибку уникальности
+      if (error.code === '23505' || error.message.includes('UNIQUE') || error.message.includes('duplicate')) {
+        this.logger.error(`❌ Ошибка уникальности при создании пользователя: ${error.message}`);
+        // Пробуем создать с другим email
+        const fallbackEmail = `${userData.login}_${Date.now()}@github.local`;
+        this.logger.log(`Пробуем создать пользователя с fallback email: ${fallbackEmail}`);
+        newUser.email = fallbackEmail;
+        const savedUser = await this.usersRepo.save(newUser);
+        this.logger.log(`Создан новый пользователь через GitHub с fallback email: ${savedUser?.email}`);
+        return savedUser;
+      }
+      throw error;
+    }
   }
 
   private async assignDefaultRoleToUser(userId: string): Promise<void> {

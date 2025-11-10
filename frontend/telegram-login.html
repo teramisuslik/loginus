@@ -596,7 +596,7 @@
                         
                         // Редиректим на /api/oauth/authorize для продолжения OAuth flow
                         isProcessingTelegramAuth = false;
-                        const apiBaseUrl = API_BASE.replace('/api', '') || 'https://vselena.ldmco.ru';
+                        const apiBaseUrl = API_BASE.replace('/api', '') || 'https://loginus.startapus.com';
                         window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
                         return;
                     }

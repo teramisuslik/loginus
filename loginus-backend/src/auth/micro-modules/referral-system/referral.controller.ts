@@ -66,7 +66,7 @@ export class ReferralController {
       codes: codes.map(code => {
         const frontendUrl = this.configService?.get<string>('FRONTEND_URL') || 
                            this.configService?.get<string>('APP_FRONTEND_URL') ||
-                           'https://vselena.ldmco.ru';
+                           'https://loginus.startapus.com';
         const link = `${frontendUrl}/index.html?ref=${code.code}`;
         
         return {

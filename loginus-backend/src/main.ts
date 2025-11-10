@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -52,8 +52,8 @@ async function bootstrap() {
         'http://45.144.176.42:3002',
         'https://loginus.ldmco.ru',
         'http://loginus.ldmco.ru',
-        'https://vselena.ldmco.ru',
-        'http://vselena.ldmco.ru'
+        'https://loginus.startapus.com',
+        'http://loginus.startapus.com'
       ];
       
       if (allowedOrigins.includes(origin)) {

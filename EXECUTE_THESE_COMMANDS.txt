@@ -1,0 +1,42 @@
+==========================================
+КОМАНДЫ ДЛЯ ВЫПОЛНЕНИЯ В ТЕРМИНАЛЕ
+==========================================
+
+Выполните эти команды по очереди в PowerShell или CMD:
+
+1. Загрузить SQL файл на сервер:
+   scp -i C:\Users\teramisuslik\.ssh\id_ed25519 loginus-backend\register_sv_erp_client.sql root@45.144.176.42:/tmp/register_client.sql
+
+2. Выполнить SQL на сервере:
+   ssh -i C:\Users\teramisuslik\.ssh\id_ed25519 root@45.144.176.42 "docker exec -i $(docker ps -q -f name=postgres | head -1) psql -U postgres -d loginus < /tmp/register_client.sql"
+
+3. Результат будет содержать CLIENT_ID и CLIENT_SECRET
+
+==========================================
+АЛЬТЕРНАТИВНЫЙ СПОСОБ (если не работает)
+==========================================
+
+1. Подключиться к серверу:
+   ssh -i C:\Users\teramisuslik\.ssh\id_ed25519 root@45.144.176.42
+
+2. На сервере найти контейнер:
+   docker ps | grep postgres
+
+3. Подключиться к PostgreSQL:
+   docker exec -it <CONTAINER_ID> psql -U postgres -d loginus
+
+4. Выполнить SQL (скопировать из register_sv_erp_client.sql):
+   INSERT INTO oauth_clients (id, "clientId", "clientSecret", name, "redirectUris", scopes, "isActive", "createdAt", "updatedAt")
+   VALUES (
+     gen_random_uuid(),
+     encode(gen_random_bytes(16), 'hex'),
+     encode(gen_random_bytes(32), 'hex'),
+     'SV ERP Backend',
+     ARRAY['http://localhost:4000/api/auth/callback', 'http://localhost:3000/auth/callback'],
+     ARRAY['openid', 'email', 'profile'],
+     true,
+     NOW(),
+     NOW()
+   )
+   RETURNING "clientId", "clientSecret";
+

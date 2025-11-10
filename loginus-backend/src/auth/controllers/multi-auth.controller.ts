@@ -116,43 +116,98 @@ export class MultiAuthController {
       verificationCode?: string;
     },
   ) {
-    const userId = (req as any).user.userId;
+    // ✅ КРИТИЧЕСКОЕ ЛОГИРОВАНИЕ: Логируем ВСЕ входящие данные
+    this.logger.log(`🚨🚨🚨 [bindAuthMethod] ========== METHOD CALLED ==========`);
+    this.logger.log(`🚨 [bindAuthMethod] Request path: ${req.path}`);
+    this.logger.log(`🚨 [bindAuthMethod] Request method: ${req.method}`);
+    this.logger.log(`🚨 [bindAuthMethod] Body: ${JSON.stringify(body)}`);
+    
+    const userId = (req as any).user?.userId;
+    this.logger.log(`🚨 [bindAuthMethod] User from request: ${JSON.stringify((req as any).user)}`);
+    this.logger.log(`🚨 [bindAuthMethod] Extracted userId: ${userId}`);
     const { authMethod, identifier, password, verificationCode } = body;
     
-    // If this is EMAIL binding and password is provided, we need to hash and set it
+    this.logger.log(`🔍 [bindAuthMethod] Called for user ${userId}, method: ${authMethod}, identifier: ${identifier}, hasPassword: ${!!password}`);
+    this.logger.log(`🔍 [bindAuthMethod] authMethod type: ${typeof authMethod}, value: ${authMethod}, AuthMethodType.EMAIL: ${AuthMethodType.EMAIL}`);
+    this.logger.log(`🔍 [bindAuthMethod] Comparison: authMethod === AuthMethodType.EMAIL = ${authMethod === AuthMethodType.EMAIL}, authMethod === 'EMAIL' = ${authMethod === 'EMAIL'}`);
+    
+    // ✅ РАДИКАЛЬНОЕ ИСПРАВЛЕНИЕ: Логика привязки EMAIL аналогична GitHub
     if (authMethod === AuthMethodType.EMAIL && password) {
-      // Check if email is already in use by another user
-      const existingUser = await this.multiAuthService['usersRepo'].findOne({ 
-        where: { email: identifier } 
-      });
+      this.logger.log(`✅ [bindAuthMethod] Processing EMAIL binding for user ${userId} with email ${identifier}`);
       
-      if (existingUser && existingUser.id !== userId) {
+      // Получаем текущего пользователя
+      const currentUser = await this.multiAuthService['usersRepo'].findOne({ where: { id: userId } });
+      if (!currentUser) {
         return {
           success: false,
-          error: 'Этот email уже используется другим аккаунтом. Для привязки email к существующему аккаунту необходимо знать пароль от этого аккаунта.'
+          error: 'Пользователь не найден',
         };
       }
       
+      // Хешируем пароль
       const bcrypt = require('bcrypt');
       const salt = await bcrypt.genSalt(12);
       const passwordHash = await bcrypt.hash(password, salt);
       
-      // Update user's email and passwordHash
-      const user = await this.multiAuthService['usersRepo'].findOne({ where: { id: userId } });
-      if (user) {
-        user.email = identifier;
-        user.passwordHash = passwordHash;
-        user.emailVerified = true;
+      // Ищем существующий аккаунт с этим email (case-insensitive)
+      this.logger.log(`🔍 [bindAuthMethod] Searching for existing user with email: ${identifier}`);
+      const existingEmailUser = await this.multiAuthService['usersRepo']
+        .createQueryBuilder('user')
+        .where('LOWER(user.email) = LOWER(:email)', { email: identifier })
+        .getOne();
+      
+      this.logger.log(`🔍 [bindAuthMethod] Existing email user: ${existingEmailUser ? `ID=${existingEmailUser.id}, email=${existingEmailUser.email}` : 'none'}`);
+      this.logger.log(`🔍 [bindAuthMethod] Current user ID: ${userId}`);
+      
+      // Если найден другой пользователь с таким email - просто удаляем его
+      if (existingEmailUser && existingEmailUser.id !== userId) {
+        this.logger.log(`🗑️ [bindAuthMethod] Found existing email account: ${existingEmailUser.email}, deleting it...`);
         
-        // Add EMAIL to available methods if not already there
-        if (!user.availableAuthMethods.includes(AuthMethodType.EMAIL)) {
-          user.availableAuthMethods.push(AuthMethodType.EMAIL);
+        try {
+          await this.multiAuthService['usersRepo'].remove(existingEmailUser);
+          this.logger.log(`✅ [bindAuthMethod] Old account ${existingEmailUser.id} deleted successfully`);
+        } catch (error) {
+          this.logger.error(`❌ [bindAuthMethod] Ошибка при удалении старого аккаунта: ${error.message}`);
+          // Пробуем через delete
+          try {
+            await this.multiAuthService['usersRepo'].delete(existingEmailUser.id);
+            this.logger.log(`✅ [bindAuthMethod] Old account ${existingEmailUser.id} deleted via delete()`);
+          } catch (deleteError) {
+            this.logger.error(`❌ [bindAuthMethod] Не удалось удалить старый аккаунт: ${deleteError.message}`);
+            return {
+              success: false,
+              error: `Не удалось удалить старый аккаунт с этой почтой`,
+            };
+          }
         }
-        
-        await this.multiAuthService['usersRepo'].save(user);
-        
-        return { success: true, user };
       }
+      
+      // Теперь почта свободна - добавляем email к текущему пользователю
+      this.logger.log(`✅ [bindAuthMethod] Email ${identifier} is now free, adding to current user`);
+      
+      // Обновляем email и пароль (как в GitHub обновляются githubId, githubUsername)
+      currentUser.email = identifier;
+      currentUser.emailVerified = true;
+      currentUser.passwordHash = passwordHash;
+      
+      // Добавляем EMAIL в способы входа (ТОЧНО как в GitHub - строка 144-146)
+      if (!currentUser.availableAuthMethods || !Array.isArray(currentUser.availableAuthMethods)) {
+        currentUser.availableAuthMethods = [];
+      }
+      // Создаем новый массив вместо изменения существующего (для правильной работы с JSONB)
+      if (!currentUser.availableAuthMethods.includes(AuthMethodType.EMAIL)) {
+        currentUser.availableAuthMethods = [...currentUser.availableAuthMethods, AuthMethodType.EMAIL];
+      }
+      
+      // Сохраняем пользователя (ТОЧНО как в GitHub - строка 161)
+      const updatedUser = await this.multiAuthService['usersRepo'].save(currentUser);
+      this.logger.log(`✅ [bindAuthMethod] Email ${identifier} bound to user ${userId}, available methods: ${JSON.stringify(updatedUser.availableAuthMethods)}`);
+      
+      // Возвращаем результат (ТОЧНО как в GitHub - строка 164-167)
+      return {
+        success: true,
+        user: updatedUser,
+      };
     }
     
     return this.multiAuthService.bindAuthMethod(userId, authMethod, identifier, verificationCode);
@@ -417,13 +472,30 @@ export class MultiAuthController {
         // GitHub auth service now handles binding internally
         // If bind=true, result.user is already the current user with GitHub added
         
+        // ✅ ИСПРАВЛЕНИЕ: Если это привязка (bind), пользователь уже авторизован
+        // Не нужно проверять nFA и редиректить на вход - сразу редиректим на dashboard
+        if (bind && userId) {
+          this.logger.log(`✅ GitHub привязан к пользователю ${userId}, редиректим на dashboard`);
+          
+          // Генерируем токены для пользователя
+          const accessToken = await this.authService.generateAccessToken(result.user);
+          const refreshToken = await this.authService.generateRefreshToken(result.user);
+          
+          // Редиректим на dashboard с токенами
+          const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
+          const redirectUrl = `${frontendUrl}/dashboard.html?token=${accessToken}&refreshToken=${refreshToken}&tab=settings&message=${encodeURIComponent('GitHub успешно привязан')}`;
+          this.logger.log(`GitHub binding redirecting to: ${redirectUrl}`);
+          return res.redirect(redirectUrl);
+        }
+        
         // Проверяем, включена ли nFA (приоритет над legacy 2FA)
+        // Только для обычной регистрации/входа, не для привязки
         if (result.user.mfaSettings?.enabled && result.user.mfaSettings.methods?.length > 0) {
           // nFA включена - редиректим на страницу ввода кодов
           // Коды будут отправлены фронтендом, чтобы избежать дублирования
           this.logger.log(`nFA required for GitHub user ${result.user.id}, methods: ${JSON.stringify(result.user.mfaSettings.methods)}`);
           
-          const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
+          const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
           
           // ✅ СОХРАНЕНИЕ OAuth ПАРАМЕТРОВ: Проверяем, действительно ли это OAuth flow
           // Проверяем специальный cookie-флаг, который устанавливается только при реальном OAuth flow
@@ -494,7 +566,7 @@ export class MultiAuthController {
           });
           
           // Редиректим на /oauth/authorize для продолжения OAuth flow
-          const apiBaseUrl = process.env.API_BASE_URL || 'https://vselena.ldmco.ru/api';
+          const apiBaseUrl = process.env.API_BASE_URL || 'https://loginus.startapus.com/api';
           return res.redirect(`${apiBaseUrl}/oauth/authorize`);
         } else {
           // Обычный вход - очищаем OAuth cookies
@@ -507,14 +579,14 @@ export class MultiAuthController {
         }
         
         // Перенаправляем на dashboard с токенами (обычный flow)
-        const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
+        const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
         const redirectUrl = `${frontendUrl}/dashboard.html?token=${accessToken}&refreshToken=${refreshToken}`;
         this.logger.log(`GitHub OAuth redirecting to: ${redirectUrl}`);
         return res.redirect(redirectUrl);
       } else {
         this.logger.error(`GitHub OAuth failed: ${result.error}`);
         // Перенаправляем на главную с ошибкой
-        const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
+        const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
         const redirectUrl = `${frontendUrl}/index.html?error=${encodeURIComponent(result.error || 'Unknown error')}`;
         this.logger.log(`GitHub OAuth redirecting to error page: ${redirectUrl}`);
         return res.redirect(redirectUrl);
@@ -522,7 +594,7 @@ export class MultiAuthController {
     } catch (error) {
       this.logger.error(`GitHub OAuth callback error: ${error.message}`);
       this.logger.error(error.stack);
-      const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
       const redirectUrl = `${frontendUrl}/index.html?error=${encodeURIComponent(error.message || 'Unknown error')}`;
       this.logger.log(`GitHub OAuth redirecting to error page: ${redirectUrl}`);
       return res.redirect(redirectUrl);
@@ -901,4 +973,5 @@ export class MultiAuthController {
     
     return savedUser;
   }
+
 }

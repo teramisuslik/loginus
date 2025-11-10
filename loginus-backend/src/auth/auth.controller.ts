@@ -1,5 +1,6 @@
-import { Controller, Post, Get, Body, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, UnauthorizedException, Req, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -33,8 +34,31 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Успешная авторизация' })
   @ApiResponse({ status: 401, description: 'Неверные credentials' })
   @ApiResponse({ status: 202, description: 'Требуется 2FA' })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto);
+    
+    // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie
+    const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';
+    const oauthClientId = req.cookies?.oauth_client_id;
+    const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+    
+    // Проверяем, что это успешная авторизация (не 2FA/nFA) и есть OAuth cookies
+    if (result && 'accessToken' in result && oauthFlowActive && oauthClientId && oauthRedirectUri) {
+      console.log(`✅ [Auth] OAuth flow detected in email login, setting temp_access_token cookie`);
+      console.log(`🔍 [Auth] OAuth params: client_id=${oauthClientId}, redirect_uri=${oauthRedirectUri}`);
+      
+      // Устанавливаем temp_access_token cookie для /oauth/authorize
+      res.cookie('temp_access_token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60000, // 1 минута
+      });
+      
+      console.log(`✅ [Auth] temp_access_token cookie set for OAuth flow`);
+    }
+    
+    return result;
   }
 
   @Post('2fa/complete')
@@ -42,8 +66,26 @@ export class AuthController {
   @ApiOperation({ summary: 'Завершение входа с 2FA' })
   @ApiResponse({ status: 200, description: '2FA успешно пройден' })
   @ApiResponse({ status: 400, description: 'Неверный код 2FA' })
-  async complete2FALogin(@Body() dto: { userId: string; code: string }) {
-    return this.authService.complete2FALogin(dto.userId, dto.code);
+  async complete2FALogin(@Body() dto: { userId: string; code: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.complete2FALogin(dto.userId, dto.code);
+    
+    // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie
+    const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';
+    const oauthClientId = req.cookies?.oauth_client_id;
+    const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+    
+    if (result && 'accessToken' in result && oauthFlowActive && oauthClientId && oauthRedirectUri) {
+      console.log(`✅ [Auth] OAuth flow detected in 2FA completion, setting temp_access_token cookie`);
+      
+      res.cookie('temp_access_token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60000,
+      });
+    }
+    
+    return result;
   }
 
   @Post('nfa/complete')
@@ -51,8 +93,26 @@ export class AuthController {
   @ApiOperation({ summary: 'Завершение входа с nFA (после подтверждения всех методов)' })
   @ApiResponse({ status: 200, description: 'nFA успешно пройдена, токены выданы' })
   @ApiResponse({ status: 400, description: 'Не все методы подтверждены' })
-  async completeNFALogin(@Body() dto: { userId: string }) {
-    return this.authService.completeNFALogin(dto.userId);
+  async completeNFALogin(@Body() dto: { userId: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.completeNFALogin(dto.userId);
+    
+    // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie
+    const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';
+    const oauthClientId = req.cookies?.oauth_client_id;
+    const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+    
+    if (result && 'accessToken' in result && oauthFlowActive && oauthClientId && oauthRedirectUri) {
+      console.log(`✅ [Auth] OAuth flow detected in nFA completion, setting temp_access_token cookie`);
+      
+      res.cookie('temp_access_token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60000,
+      });
+    }
+    
+    return result;
   }
 
   @Post('refresh')

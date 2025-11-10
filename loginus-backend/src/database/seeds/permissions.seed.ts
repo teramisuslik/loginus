@@ -63,6 +63,104 @@ export const SYSTEM_PERMISSIONS = [
     description: 'Публикация материалов',
   },
 
+  // ========== KNOWLEDGE BASE - CATEGORIES ==========
+  {
+    name: 'knowledge.categories.read',
+    resource: 'knowledge.categories',
+    action: 'read',
+    description: 'Просмотр категорий',
+  },
+  {
+    name: 'knowledge.categories.create',
+    resource: 'knowledge.categories',
+    action: 'create',
+    description: 'Создание категорий',
+  },
+  {
+    name: 'knowledge.categories.update',
+    resource: 'knowledge.categories',
+    action: 'update',
+    description: 'Редактирование категорий',
+  },
+  {
+    name: 'knowledge.categories.delete',
+    resource: 'knowledge.categories',
+    action: 'delete',
+    description: 'Удаление категорий',
+  },
+
+  // ========== KNOWLEDGE BASE - TYPES ==========
+  {
+    name: 'knowledge.types.read',
+    resource: 'knowledge.types',
+    action: 'read',
+    description: 'Просмотр типов',
+  },
+  {
+    name: 'knowledge.types.create',
+    resource: 'knowledge.types',
+    action: 'create',
+    description: 'Создание типов',
+  },
+  {
+    name: 'knowledge.types.update',
+    resource: 'knowledge.types',
+    action: 'update',
+    description: 'Редактирование типов',
+  },
+  {
+    name: 'knowledge.types.delete',
+    resource: 'knowledge.types',
+    action: 'delete',
+    description: 'Удаление типов',
+  },
+
+  // ========== KNOWLEDGE BASE - ITEMS ==========
+  {
+    name: 'knowledge.items.read',
+    resource: 'knowledge.items',
+    action: 'read',
+    description: 'Просмотр материалов',
+  },
+  {
+    name: 'knowledge.items.create',
+    resource: 'knowledge.items',
+    action: 'create',
+    description: 'Создание материалов',
+  },
+  {
+    name: 'knowledge.items.update',
+    resource: 'knowledge.items',
+    action: 'update',
+    description: 'Редактирование материалов',
+  },
+  {
+    name: 'knowledge.items.delete',
+    resource: 'knowledge.items',
+    action: 'delete',
+    description: 'Удаление материалов',
+  },
+
+  // ========== KNOWLEDGE BASE - FILES ==========
+  {
+    name: 'knowledge.files.read',
+    resource: 'knowledge.files',
+    action: 'read',
+    description: 'Просмотр и скачивание файлов',
+  },
+  {
+    name: 'knowledge.files.create',
+    resource: 'knowledge.files',
+    action: 'create',
+    description: 'Загрузка файлов',
+  },
+  {
+    name: 'knowledge.files.delete',
+    resource: 'knowledge.files',
+    action: 'delete',
+    description: 'Удаление файлов',
+  },
+
   // ========== CLIENTS (CRM) ==========
   {
     name: 'clients.create',

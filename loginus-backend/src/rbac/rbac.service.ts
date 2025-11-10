@@ -4,6 +4,10 @@ import { Repository, In } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
+import { OrganizationRole } from '../organizations/entities/organization-role.entity';
+import { TeamRole } from '../teams/entities/team-role.entity';
+import { Organization } from '../organizations/entities/organization.entity';
+import { Team } from '../teams/entities/team.entity';
 
 @Injectable()
 export class RbacService {
@@ -11,6 +15,10 @@ export class RbacService {
     @InjectRepository(User) private usersRepo: Repository<User>,
     @InjectRepository(Role) private rolesRepo: Repository<Role>,
     @InjectRepository(Permission) private permissionsRepo: Repository<Permission>,
+    @InjectRepository(OrganizationRole) private orgRoleRepo: Repository<OrganizationRole>,
+    @InjectRepository(TeamRole) private teamRoleRepo: Repository<TeamRole>,
+    @InjectRepository(Organization) private organizationRepo: Repository<Organization>,
+    @InjectRepository(Team) private teamRepo: Repository<Team>,
   ) {}
 
   /**
@@ -174,6 +182,8 @@ export class RbacService {
     organizationId?: string,
     teamId?: string,
     permissionIds: string[] = [],
+    isGlobal: boolean = true,
+    level?: number,
   ): Promise<Role> {
     // Проверяем, что название содержит только латинские буквы, цифры и подчеркивания
     if (!/^[a-zA-Z0-9_]+$/.test(name)) {
@@ -195,6 +205,7 @@ export class RbacService {
       organizationId,
       teamId,
       isSystem: false,
+      isGlobal,
     });
 
     await this.rolesRepo.save(role);
@@ -208,6 +219,12 @@ export class RbacService {
         .add(permissionIds);
     }
 
+    // Если роль глобальная (системная или кастомная), синхронизируем с organization_roles и team_roles
+    if (role.isGlobal) {
+      await this.syncGlobalRoleToOrganizations(role.name, level);
+      await this.syncGlobalRoleToTeams(role.name, level);
+    }
+
     return role;
   }
 
@@ -217,6 +234,7 @@ export class RbacService {
   async updateRolePermissions(
     roleId: string,
     permissionIds: string[],
+    userId?: string,
   ): Promise<void> {
     const role = await this.rolesRepo.findOne({
       where: { id: roleId },
@@ -227,9 +245,8 @@ export class RbacService {
       throw new NotFoundException('Role not found');
     }
 
-    if (role.isSystem) {
-      throw new ForbiddenException('Cannot modify system role');
-    }
+    // Разрешаем изменение прав для всех ролей (включая системные)
+    // Права можно изменять, так как это не влияет на структуру роли
 
     // Удаляем все текущие права
     const currentPermissionIds = role.permissions.map(p => p.id);
@@ -249,10 +266,170 @@ export class RbacService {
         .of(roleId)
         .add(permissionIds);
     }
+
+    // Если роль глобальная (системная или кастомная), синхронизируем с organization_roles и team_roles
+    // Для обновления прав level не передаем, используем существующий из organization_roles/team_roles
+    if (role.isGlobal) {
+      await this.syncGlobalRoleToOrganizations(role.name);
+      await this.syncGlobalRoleToTeams(role.name);
+    }
+  }
+
+  /**
+   * Синхронизация глобальной роли (системной или кастомной) со всеми organization_roles
+   * Вызывается при изменении прав глобальной роли или создании новой роли
+   */
+  private async syncGlobalRoleToOrganizations(roleName: string, level?: number): Promise<void> {
+    console.log(`🔄 [RbacService] Syncing global role ${roleName} to all organization_roles`);
+    
+    // Получаем обновленную роль с правами
+    const globalRole = await this.rolesRepo.findOne({
+      where: { name: roleName, isGlobal: true },
+      relations: ['permissions'],
+    });
+
+    if (!globalRole) {
+      console.warn(`⚠️ [RbacService] Global role ${roleName} not found`);
+      return;
+    }
+
+    const permissionNames = globalRole.permissions?.map(p => p.name) || [];
+    
+    // Получаем все организации из таблицы organizations
+    const organizations = await this.organizationRepo.find({
+      select: ['id'],
+    });
+    
+    const organizationIds = organizations.map(org => org.id);
+    
+    // Уровни ролей (используются только если level не передан явно)
+    const ROLE_LEVELS: Record<string, number> = {
+      super_admin: 100,
+      admin: 80,
+      manager: 60,
+      editor: 40,
+      viewer: 20,
+    };
+    
+    // Используем переданный level или значение из ROLE_LEVELS, или 0 по умолчанию
+    const roleLevel = level !== undefined ? level : (ROLE_LEVELS[roleName] || 0);
+    
+    let createdCount = 0;
+    let updatedCount = 0;
+    
+    // Для каждой организации проверяем/создаем/обновляем роль
+    for (const orgId of organizationIds) {
+      const existingRole = await this.orgRoleRepo.findOne({
+        where: { organizationId: orgId, name: roleName },
+      });
+      
+      if (existingRole) {
+        // Обновляем существующую роль
+        existingRole.permissions = permissionNames;
+        existingRole.isSystem = globalRole.isSystem || false;
+        // Обновляем level только если он был передан явно (при создании новой роли)
+        if (level !== undefined) {
+          existingRole.level = roleLevel;
+        }
+        await this.orgRoleRepo.save(existingRole);
+        updatedCount++;
+      } else {
+        // Создаем новую роль
+        const newOrgRole = this.orgRoleRepo.create({
+          name: roleName,
+          description: globalRole.description || '',
+          organizationId: orgId,
+          permissions: permissionNames,
+          level: roleLevel,
+          isSystem: globalRole.isSystem || false,
+        });
+        await this.orgRoleRepo.save(newOrgRole);
+        createdCount++;
+      }
+    }
+
+    console.log(`✅ [RbacService] Synced role ${roleName}: created ${createdCount}, updated ${updatedCount} organization_roles`);
+  }
+
+  /**
+   * Синхронизация глобальной роли (системной или кастомной) со всеми team_roles
+   * Вызывается при изменении прав глобальной роли или создании новой роли
+   */
+  private async syncGlobalRoleToTeams(roleName: string, level?: number): Promise<void> {
+    console.log(`🔄 [RbacService] Syncing global role ${roleName} to all team_roles`);
+    
+    // Получаем обновленную роль с правами
+    const globalRole = await this.rolesRepo.findOne({
+      where: { name: roleName, isGlobal: true },
+      relations: ['permissions'],
+    });
+
+    if (!globalRole) {
+      console.warn(`⚠️ [RbacService] Global role ${roleName} not found`);
+      return;
+    }
+
+    const permissionNames = globalRole.permissions?.map(p => p.name) || [];
+    
+    // Получаем все команды из таблицы teams
+    const teams = await this.teamRepo.find({
+      select: ['id'],
+    });
+    
+    const teamIds = teams.map(team => team.id);
+    
+    // Уровни ролей (используются только если level не передан явно)
+    const ROLE_LEVELS: Record<string, number> = {
+      super_admin: 100,
+      admin: 80,
+      manager: 60,
+      editor: 40,
+      viewer: 20,
+    };
+    
+    // Используем переданный level или значение из ROLE_LEVELS, или 0 по умолчанию
+    const roleLevel = level !== undefined ? level : (ROLE_LEVELS[roleName] || 0);
+    
+    let createdCount = 0;
+    let updatedCount = 0;
+    
+    // Для каждой команды проверяем/создаем/обновляем роль
+    for (const teamId of teamIds) {
+      const existingRole = await this.teamRoleRepo.findOne({
+        where: { teamId: teamId, name: roleName },
+      });
+      
+      if (existingRole) {
+        // Обновляем существующую роль
+        existingRole.permissions = permissionNames;
+        existingRole.isSystem = globalRole.isSystem || false;
+        // Обновляем level только если он был передан явно (при создании новой роли)
+        if (level !== undefined) {
+          existingRole.level = roleLevel;
+        }
+        await this.teamRoleRepo.save(existingRole);
+        updatedCount++;
+      } else {
+        // Создаем новую роль
+        const newTeamRole = this.teamRoleRepo.create({
+          name: roleName,
+          description: globalRole.description || '',
+          teamId: teamId,
+          permissions: permissionNames,
+          level: roleLevel,
+          isSystem: globalRole.isSystem || false,
+        });
+        await this.teamRoleRepo.save(newTeamRole);
+        createdCount++;
+      }
+    }
+
+    console.log(`✅ [RbacService] Synced role ${roleName}: created ${createdCount}, updated ${updatedCount} team_roles`);
   }
 
   /**
    * Удаление роли (только не системные)
+   * Также удаляет роль из organization_roles и team_roles
    */
   async deleteRole(roleId: string): Promise<void> {
     const role = await this.rolesRepo.findOne({ where: { id: roleId } });
@@ -265,7 +442,17 @@ export class RbacService {
       throw new ForbiddenException('Cannot delete system role');
     }
 
+    // Удаляем роль из organization_roles
+    const orgRolesDeleted = await this.orgRoleRepo.delete({ name: role.name });
+    console.log(`🗑️ [RbacService] Deleted ${orgRolesDeleted.affected || 0} organization_roles for role ${role.name}`);
+
+    // Удаляем роль из team_roles
+    const teamRolesDeleted = await this.teamRoleRepo.delete({ name: role.name });
+    console.log(`🗑️ [RbacService] Deleted ${teamRolesDeleted.affected || 0} team_roles for role ${role.name}`);
+
+    // Удаляем саму роль из roles
     await this.rolesRepo.delete(roleId);
+    console.log(`✅ [RbacService] Deleted role ${role.name} from roles table`);
   }
 
   /**
@@ -454,7 +641,7 @@ export class RbacService {
   /**
    * Обновление роли
    */
-  async updateRole(roleId: string, updateRoleDto: any): Promise<Role> {
+  async updateRole(roleId: string, updateRoleDto: any, userId?: string): Promise<Role> {
     const role = await this.rolesRepo.findOne({
       where: { id: roleId }
     });
@@ -463,9 +650,8 @@ export class RbacService {
       throw new NotFoundException('Роль не найдена');
     }
 
-    if (role.isSystem) {
-      throw new ForbiddenException('Нельзя редактировать системные роли');
-    }
+    // Разрешаем редактирование всех ролей (включая системные)
+    // Можно изменять название и описание, так как это не влияет на структуру роли
 
     // Обновляем только переданные поля
     if (updateRoleDto.name) {

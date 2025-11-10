@@ -70,6 +70,8 @@ export class RolesController {
       organizationId?: string;
       teamId?: string;
       isSystem?: boolean;
+      isGlobal?: boolean;
+      level?: number;
       permissions?: string[];
     },
     @CurrentUser() user: any,
@@ -84,6 +86,8 @@ export class RolesController {
       organizationId,
       teamId,
       createRoleDto.permissionIds,
+      createRoleDto.isGlobal ?? true,
+      createRoleDto.level,
     );
   }
 
@@ -96,8 +100,9 @@ export class RolesController {
       name?: string;
       description?: string;
     },
+    @CurrentUser() user: any,
   ) {
-    return this.rbacService.updateRole(id, updateRoleDto);
+    return this.rbacService.updateRole(id, updateRoleDto, user.userId);
   }
 
   @Patch(':id/permissions')
@@ -106,8 +111,9 @@ export class RolesController {
   async updateRolePermissions(
     @Param('id') id: string,
     @Body() updatePermissionsDto: { permissionIds: string[] },
+    @CurrentUser() user: any,
   ) {
-    await this.rbacService.updateRolePermissions(id, updatePermissionsDto.permissionIds);
+    await this.rbacService.updateRolePermissions(id, updatePermissionsDto.permissionIds, user.userId);
     return { message: 'Role permissions updated successfully' };
   }
 

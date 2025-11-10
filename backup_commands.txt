@@ -1,0 +1,12 @@
+# Команды для выполнения на сервере через SSH
+# Скопируйте и выполните эти команды:
+
+ssh -i C:\Users\teramisuslik\.ssh\id_ed25519 root@45.144.176.42
+
+# После подключения выполните:
+cd /opt/vselena_back
+BACKUP_FILE="/root/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+tar -czf "$BACKUP_FILE" .
+ls -lh "$BACKUP_FILE"
+echo "Backup created: $BACKUP_FILE"
+

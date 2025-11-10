@@ -68,7 +68,9 @@ export class OrganizationsService {
     const savedOrg = await this.orgRepo.save(organization);
 
     // Создаем системные роли для организации
-    await this.createSystemRoles(savedOrg.id);
+    // ✅ ВАЖНО: copyGlobalRolesToOrganization синхронизирует права из глобальной таблицы roles
+    // Это гарантирует, что все роли будут иметь актуальные права из таблицы roles
+    await this.copyGlobalRolesToOrganization(savedOrg.id);
 
     // Добавляем создателя как super_admin
     await this.addMemberToOrganization(savedOrg.id, creatorId, 'super_admin', creatorId);
@@ -82,7 +84,7 @@ export class OrganizationsService {
   private async copyGlobalRolesToOrganization(organizationId: string): Promise<void> {
     console.log(`🔧 [OrganizationsService] copyGlobalRolesToOrganization called for organization ${organizationId}`);
     
-    // Получаем все глобальные роли
+    // Получаем все глобальные роли (системные и кастомные)
     const globalRoles = await this.rolesRepo.find({
       where: { isGlobal: true },
       relations: ['permissions'],
@@ -108,7 +110,29 @@ export class OrganizationsService {
         });
 
         if (existingRole) {
-          console.log(`⚠️ [OrganizationsService] Role ${globalRole.name} already exists in organization ${organizationId}`);
+          // ✅ ВАЖНО: ВСЕГДА обновляем права из глобальной таблицы roles
+          // Это гарантирует синхронизацию при создании новой организации
+          const newPermissionNames = globalRole.permissions?.map(p => p.name) || [];
+          const currentPermissionNames = existingRole.permissions || [];
+          
+          // Сравниваем массивы прав (приводим к отсортированным массивам для сравнения)
+          const currentSorted = [...currentPermissionNames].sort().join(',');
+          const newSorted = [...newPermissionNames].sort().join(',');
+          
+          // Обновляем права, даже если они кажутся одинаковыми (для гарантии синхронизации)
+          existingRole.permissions = newPermissionNames;
+          existingRole.isSystem = globalRole.isSystem || false;
+          existingRole.level = ROLE_LEVELS[globalRole.name] || 0; // Обновляем level
+          
+          if (currentSorted !== newSorted) {
+            console.log(`🔄 [OrganizationsService] Updating permissions for role ${globalRole.name} in organization ${organizationId}`);
+            await this.orgRoleRepo.save(existingRole);
+            console.log(`✅ [OrganizationsService] Updated role ${globalRole.name} permissions in organization ${organizationId}`);
+          } else {
+            // Сохраняем даже если права одинаковые, чтобы обновить level и isSystem
+            await this.orgRoleRepo.save(existingRole);
+            console.log(`✅ [OrganizationsService] Synced role ${globalRole.name} in organization ${organizationId} (permissions unchanged)`);
+          }
           continue;
         }
 
@@ -134,49 +158,12 @@ export class OrganizationsService {
 
   /**
    * Создать системные роли для организации
+   * @deprecated Используйте copyGlobalRolesToOrganization вместо этого метода
+   * Этот метод оставлен для обратной совместимости, но теперь просто вызывает copyGlobalRolesToOrganization
    */
   private async createSystemRoles(organizationId: string): Promise<void> {
-    const systemRoles = [
-      {
-        name: 'super_admin',
-        description: 'Суперадминистратор организации',
-        permissions: ['organizations.manage', 'teams.create', 'teams.manage', 'users.invite', 'users.manage', 'roles.manage'],
-        level: 100,
-      },
-      {
-        name: 'admin',
-        description: 'Администратор организации',
-        permissions: ['teams.create', 'teams.manage', 'users.invite', 'users.manage'],
-        level: 80,
-      },
-      {
-        name: 'manager',
-        description: 'Менеджер организации',
-        permissions: ['teams.manage', 'users.invite', 'users.manage'],
-        level: 60,
-      },
-      {
-        name: 'editor',
-        description: 'Редактор организации',
-        permissions: ['organizations.read', 'teams.read'],
-        level: 40,
-      },
-      {
-        name: 'viewer',
-        description: 'Наблюдатель организации',
-        permissions: ['organizations.read'],
-        level: 20,
-      },
-    ];
-
-    for (const roleData of systemRoles) {
-      const role = this.orgRoleRepo.create({
-        ...roleData,
-        organizationId,
-        isSystem: true,
-      });
-      await this.orgRoleRepo.save(role);
-    }
+    // ✅ ВАЖНО: Используем copyGlobalRolesToOrganization для синхронизации прав из глобальной таблицы
+    await this.copyGlobalRolesToOrganization(organizationId);
   }
 
   /**
