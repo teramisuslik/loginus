@@ -24,8 +24,31 @@ export class AuthController {
   @ApiOperation({ summary: 'Регистрация нового пользователя (первый пользователь становится админом)' })
   @ApiResponse({ status: 201, description: 'Пользователь создан' })
   @ApiResponse({ status: 409, description: 'Email уже существует' })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.register(dto);
+    
+    // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie (как в login)
+    const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';
+    const oauthClientId = req.cookies?.oauth_client_id;
+    const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+    
+    // Проверяем, что это успешная регистрация и есть OAuth cookies
+    if (result && 'accessToken' in result && oauthFlowActive && oauthClientId && oauthRedirectUri) {
+      console.log(`✅ [Auth] OAuth flow detected in registration, setting temp_access_token cookie`);
+      console.log(`🔍 [Auth] OAuth params: client_id=${oauthClientId}, redirect_uri=${oauthRedirectUri}`);
+      
+      // Устанавливаем temp_access_token cookie для /oauth/authorize
+      res.cookie('temp_access_token', result.accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60000, // 1 минута
+      });
+      
+      console.log(`✅ [Auth] temp_access_token cookie set for OAuth flow`);
+    }
+    
+    return result;
   }
 
   @Post('login')
@@ -36,6 +59,25 @@ export class AuthController {
   @ApiResponse({ status: 202, description: 'Требуется 2FA' })
   async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
+    
+    // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie
+    const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';
+    const oauthClientId = req.cookies?.oauth_client_id;
+    const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+    
+    // ✅ SSO: Устанавливаем access_token cookie для автоматического входа в других вкладках
+    if (result && 'accessToken' in result) {
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax' as const,
+        maxAge: 15 * 60 * 1000, // 15 минут (как у JWT токена)
+        path: '/',
+      };
+      
+      res.cookie('access_token', result.accessToken, cookieOptions);
+      console.log(`✅ [Auth] access_token cookie set for SSO (15 minutes)`);
+    }
     
     // ✅ ПРОВЕРКА OAuth FLOW: Если это OAuth flow, устанавливаем temp_access_token cookie
     const oauthFlowActive = req.cookies?.oauth_flow_active === 'true';

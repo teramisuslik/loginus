@@ -587,17 +587,94 @@
                         
                         // Сохраняем токен в cookie для /oauth/authorize (аналогично GitHub)
                         // Backend будет использовать temp_access_token cookie для авторизации
-                        document.cookie = `temp_access_token=${data.accessToken}; path=/; max-age=60; SameSite=Lax`;
+                        const isSecure = window.location.protocol === 'https:';
+                        const cookieOptions = [
+                            `temp_access_token=${data.accessToken}`,
+                            'path=/',
+                            'max-age=60',
+                            'SameSite=Lax'
+                        ];
+                        if (isSecure) {
+                            cookieOptions.push('Secure');
+                        }
+                        document.cookie = cookieOptions.join('; ');
                         
-                        // Очищаем sessionStorage
-                        sessionStorage.removeItem('oauth_flow');
-                        sessionStorage.removeItem('return_to');
-                        sessionStorage.removeItem('oauth_client_id');
+                        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Восстанавливаем все параметры OAuth из URL, cookies и sessionStorage (в таком порядке приоритета)
+                        // 1. Сначала проверяем URL параметры (самый приоритетный источник)
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const urlClientId = urlParams.get('client_id');
+                        const urlRedirectUri = urlParams.get('redirect_uri');
+                        const urlResponseType = urlParams.get('response_type');
+                        const urlScope = urlParams.get('scope');
+                        const urlState = urlParams.get('state');
                         
-                        // Редиректим на /api/oauth/authorize для продолжения OAuth flow
+                        // 2. Затем проверяем cookies (если нет в URL)
+                        const getCookie = (name) => {
+                            const cookies = document.cookie.split(';');
+                            const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                            return cookie ? cookie.split('=')[1] : null;
+                        };
+                        const cookieClientId = getCookie('oauth_client_id');
+                        const cookieRedirectUri = getCookie('oauth_redirect_uri');
+                        const cookieResponseType = getCookie('oauth_response_type');
+                        const cookieScope = getCookie('oauth_scope');
+                        const cookieState = getCookie('oauth_state_param');
+                        
+                        // 3. И наконец проверяем sessionStorage (если нет ни в URL, ни в cookies)
+                        const savedClientId = urlClientId || cookieClientId || sessionStorage.getItem('oauth_client_id');
+                        const savedRedirectUri = urlRedirectUri || cookieRedirectUri || sessionStorage.getItem('oauth_redirect_uri');
+                        const savedResponseType = urlResponseType || cookieResponseType || sessionStorage.getItem('oauth_response_type') || 'code';
+                        const savedScope = urlScope || cookieScope || sessionStorage.getItem('oauth_scope');
+                        const savedState = urlState || cookieState || sessionStorage.getItem('oauth_state_param');
+                        
+                        console.log('🔄 [Telegram] Restored OAuth params:', {
+                            url: { client_id: urlClientId, redirect_uri: urlRedirectUri },
+                            cookies: { client_id: cookieClientId, redirect_uri: cookieRedirectUri },
+                            sessionStorage: { client_id: sessionStorage.getItem('oauth_client_id'), redirect_uri: sessionStorage.getItem('oauth_redirect_uri') },
+                            final: {
+                                client_id: savedClientId,
+                                redirect_uri: savedRedirectUri,
+                                response_type: savedResponseType,
+                                scope: savedScope,
+                                state: savedState
+                            }
+                        });
+                        
+                        // ✅ ВАЛИДАЦИЯ: Проверяем, что все обязательные параметры присутствуют
+                        if (!savedClientId || !savedRedirectUri) {
+                            console.error('❌ [Telegram] Missing required OAuth parameters!', {
+                                client_id: savedClientId,
+                                redirect_uri: savedRedirectUri
+                            });
+                            alert('Ошибка: отсутствуют обязательные параметры OAuth. Пожалуйста, начните авторизацию заново.');
+                            window.location.href = '/index.html';
+                            return;
+                        }
+                        
+                        // Собираем параметры для URL
+                        const oauthParams = new URLSearchParams();
+                        if (savedClientId) {
+                            oauthParams.set('client_id', savedClientId);
+                        }
+                        if (savedRedirectUri) {
+                            oauthParams.set('redirect_uri', savedRedirectUri);
+                        }
+                        if (savedResponseType) {
+                            oauthParams.set('response_type', savedResponseType);
+                        }
+                        if (savedScope) {
+                            oauthParams.set('scope', savedScope);
+                        }
+                        if (savedState) {
+                            oauthParams.set('state', savedState);
+                        }
+                        
+                        // Редиректим на /api/oauth/authorize для продолжения OAuth flow с параметрами
                         isProcessingTelegramAuth = false;
                         const apiBaseUrl = API_BASE.replace('/api', '') || 'https://loginus.startapus.com';
-                        window.location.href = `${apiBaseUrl}/api/oauth/authorize`;
+                        const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                        console.log('🔄 [Telegram] Redirecting to:', redirectUrl);
+                        window.location.href = redirectUrl;
                         return;
                     }
                     
