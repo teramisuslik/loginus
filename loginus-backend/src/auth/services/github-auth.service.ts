@@ -28,7 +28,10 @@ export class GitHubAuthService {
   ) {
     this.clientId = this.configService.get<string>('GITHUB_CLIENT_ID') || '';
     this.clientSecret = this.configService.get<string>('GITHUB_CLIENT_SECRET') || '';
-    this.redirectUri = this.configService.get<string>('GITHUB_REDIRECT_URI') || 'http://localhost:3001/api/auth/multi/oauth/github/callback';
+    // ✅ ИСПРАВЛЕНИЕ: Redirect URI должен указывать на frontend (github-login.html), а не на backend
+    // Frontend обработает code и вызовет backend endpoint для обмена code на token
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://loginus.startapus.com';
+    this.redirectUri = this.configService.get<string>('GITHUB_REDIRECT_URI') || `${frontendUrl}/github-login.html`;
   }
 
   /**

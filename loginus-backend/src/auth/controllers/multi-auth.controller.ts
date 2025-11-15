@@ -394,30 +394,73 @@ export class MultiAuthController {
   @ApiResponse({ status: 200, description: 'URL для авторизации' })
   @ApiResponse({ status: 400, description: 'OAuth не настроен' })
   async getGitHubAuthUrl(
+    @Req() req: Request,
     @Query('state') state?: string,
     @Query('bind') bind?: string,
     @Query('userId') userId?: string,
     @Query('forceLogin') forceLogin?: string,
+    @Query('oauth_client_id') oauthClientIdFromQuery?: string,
+    @Query('oauth_redirect_uri') oauthRedirectUriFromQuery?: string,
+    @Query('oauth_scope') oauthScopeFromQuery?: string,
+    @Query('oauth_state') oauthStateFromQuery?: string,
   ) {
     try {
+      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем OAuth параметры в state для передачи через GitHub
+      // Это гарантирует, что параметры сохранятся при кросс-доменном редиректе
+      // ✅ ПРИОРИТЕТ: Query параметры > Cookies (query параметры более надежны)
+      const oauthClientId = oauthClientIdFromQuery || req.cookies?.oauth_client_id;
+      const oauthRedirectUri = oauthRedirectUriFromQuery || req.cookies?.oauth_redirect_uri;
+      const oauthScope = oauthScopeFromQuery || req.cookies?.oauth_scope;
+      const oauthState = oauthStateFromQuery || req.cookies?.oauth_state_param;
+      
+      this.logger.log(`🔍 [GitHub URL] OAuth params check:`, {
+        oauthClientIdFromQuery: oauthClientIdFromQuery ? 'present' : 'missing',
+        oauthRedirectUriFromQuery: oauthRedirectUriFromQuery ? 'present' : 'missing',
+        oauthClientIdFromCookie: req.cookies?.oauth_client_id ? 'present' : 'missing',
+        oauthRedirectUriFromCookie: req.cookies?.oauth_redirect_uri ? 'present' : 'missing',
+        finalOauthClientId: oauthClientId ? 'present' : 'missing',
+        finalOauthRedirectUri: oauthRedirectUri ? 'present' : 'missing',
+        oauthScope: oauthScope ? 'present' : 'missing',
+        oauthState: oauthState ? 'present' : 'missing',
+        allCookies: Object.keys(req.cookies || {}).filter(k => k.startsWith('oauth_')),
+        cookieHeader: req.headers.cookie ? 'present' : 'missing',
+      });
+      
       // Если это привязка к существующему аккаунту, добавляем параметры в state
-      let finalState = state;
+      let stateData: any = {};
+      
       if (bind === 'true' && userId) {
-        const stateData = {
+        stateData = {
           bind: true,
           userId: userId,
           originalState: state || Math.random().toString(36).substring(2, 15)
         };
-        finalState = Buffer.from(JSON.stringify(stateData)).toString('base64');
-        this.logger.log(`🔍 GitHub OAuth URL for binding: userId=${userId}, state=${finalState}`);
+        this.logger.log(`🔍 GitHub OAuth URL for binding: userId=${userId}`);
       } else {
-        // Для обычной авторизации генерируем случайный state
-        finalState = finalState || Math.random().toString(36).substring(2, 15);
-        this.logger.log(`🔍 GitHub OAuth URL for regular auth: state=${finalState}`);
+        // Для обычной авторизации используем переданный state или генерируем новый
+        stateData.originalState = state || Math.random().toString(36).substring(2, 15);
       }
       
+      // ✅ ВАЖНО: Добавляем OAuth параметры в state (если они есть)
+      // Это гарантирует, что они сохранятся при переходе на GitHub и обратно
+      if (oauthClientId && oauthRedirectUri) {
+        stateData.client_id = oauthClientId;
+        stateData.redirect_uri = oauthRedirectUri;
+        if (oauthScope) {
+          stateData.scope = oauthScope;
+        }
+        if (oauthState) {
+          stateData.oauth_state = oauthState;
+        }
+        this.logger.log(`✅ [GitHub URL] Added OAuth params to state: client_id=${oauthClientId}, redirect_uri=${oauthRedirectUri}`);
+      }
+      
+      // Кодируем state в base64
+      const finalState = Buffer.from(JSON.stringify(stateData)).toString('base64');
+      this.logger.log(`🔍 GitHub OAuth URL state: ${finalState.substring(0, 50)}...`);
+      
       const shouldForceLogin = forceLogin === 'true';
-      const authUrl = this.githubAuthService.getAuthUrl(finalState);
+      const authUrl = this.githubAuthService.getAuthUrl(finalState, shouldForceLogin);
       return { url: authUrl };
     } catch (error) {
       this.logger.error(`GitHub OAuth error: ${error.message}`);
@@ -437,35 +480,57 @@ export class MultiAuthController {
   @ApiOperation({ summary: 'Обработка callback от GitHub' })
   @ApiQuery({ name: 'code', description: 'Код авторизации' })
   @ApiQuery({ name: 'state', required: false, description: 'Состояние' })
+  @ApiQuery({ name: 'client_id', required: false, description: 'OAuth client_id (может быть в state)' })
+  @ApiQuery({ name: 'redirect_uri', required: false, description: 'OAuth redirect_uri (может быть в state)' })
   async handleGitHubCallback(
     @Query('code') code: string,
-    @Query('state') state: string,
+    @Query('state') state: string | undefined,
+    @Query('client_id') clientIdFromQuery: string | undefined,
+    @Query('redirect_uri') redirectUriFromQuery: string | undefined,
     @Res() res: Response,
     @Req() req: Request,
   ) {
     this.logger.log(`GitHub OAuth callback received: code=${code?.substring(0, 10)}..., state=${state}`);
+    this.logger.log(`🔍 [GitHub Callback] Query params: client_id=${clientIdFromQuery || 'none'}, redirect_uri=${redirectUriFromQuery || 'none'}`);
+    
+    // ✅ ИСПРАВЛЕНИЕ: Если это браузерный запрос (не AJAX), перенаправляем на github-login.html
+    // GitHub может перенаправить напрямую на backend endpoint, но нам нужно, чтобы frontend обработал callback
+    const acceptHeader = req.headers.accept || '';
+    const isAjaxRequest = acceptHeader.includes('application/json');
+    
+    if (!isAjaxRequest && code) {
+      // Это браузерный запрос - перенаправляем на frontend страницу для обработки
+      const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
+      const redirectUrl = `${frontendUrl}/github-login.html?code=${code}${state ? '&state=' + encodeURIComponent(state) : ''}`;
+      this.logger.log(`🔄 Redirecting browser request to frontend: ${redirectUrl}`);
+      return res.redirect(redirectUrl);
+    }
     
     try {
       // Извлекаем параметры из state
       let bind = false;
       let userId: string | undefined;
       
-      try {
-        const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
-        if (stateData.bind && stateData.userId) {
-          bind = true;
-          userId = stateData.userId;
-          this.logger.log(`🔍 GitHub OAuth binding mode: userId=${userId}`);
-        } else {
-          this.logger.log(`🔍 GitHub OAuth regular mode: state=${state}`);
+      if (state) {
+        try {
+          const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+          if (stateData.bind && stateData.userId) {
+            bind = true;
+            userId = stateData.userId;
+            this.logger.log(`🔍 GitHub OAuth binding mode: userId=${userId}`);
+          } else {
+            this.logger.log(`🔍 GitHub OAuth regular mode: state=${state}`);
+          }
+        } catch (e) {
+          // Если не удалось декодировать state, это обычная авторизация
+          this.logger.log(`🔍 GitHub OAuth regular mode (state decode failed): ${e.message}`);
         }
-      } catch (e) {
-        // Если не удалось декодировать state, это обычная авторизация
-        this.logger.log(`🔍 GitHub OAuth regular mode (state decode failed): ${e.message}`);
+      } else {
+        this.logger.log(`🔍 GitHub OAuth regular mode: no state parameter`);
       }
       
+      // ✅ УПРОЩЕНИЕ: Делаем как Telegram - обрабатываем code один раз и возвращаем JSON
       const result = await this.githubAuthService.handleCallback(code, state, bind, userId);
-      
       this.logger.log(`GitHub OAuth callback result: success=${result.success}, user=${result.user?.email || 'none'}`);
       
       if (result.success) {
@@ -543,34 +608,142 @@ export class MultiAuthController {
         // ✅ ПРОВЕРКА OAuth FLOW: Проверяем, действительно ли это OAuth flow
         // Проверяем специальный cookie-флаг, который устанавливается только при реальном OAuth flow
         // Также проверяем referer как дополнительный признак
+        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем также query параметры (могут быть переданы через state)
         const referer = req.headers.referer || '';
         const oauthFlowFlag = req.cookies?.oauth_flow_active === 'true';
         const isOAuthFlow = oauthFlowFlag || referer.includes('/oauth/authorize') || referer.includes('/api/oauth/authorize');
         
-        const oauthClientId = req.cookies?.oauth_client_id;
-        const oauthRedirectUri = req.cookies?.oauth_redirect_uri;
+        // ✅ ПРИОРИТЕТ: Query параметры > Cookies (query параметры более надежны при кросс-доменных редиректах)
+        const oauthClientId = clientIdFromQuery || req.cookies?.oauth_client_id;
+        const oauthRedirectUri = redirectUriFromQuery || req.cookies?.oauth_redirect_uri;
         const oauthScope = req.cookies?.oauth_scope;
         const oauthState = req.cookies?.oauth_state_param;
         
-        // ✅ ИСПРАВЛЕНИЕ: Добавляем OAuth редирект ТОЛЬКО если это действительно OAuth flow
-        if (isOAuthFlow && oauthClientId && oauthRedirectUri) {
-          this.logger.log(`✅ OAuth flow detected in GitHub callback (referer: ${referer}, flag: ${oauthFlowFlag}), redirecting to /oauth/authorize`);
-          this.logger.log(`OAuth params: client_id=${oauthClientId}, redirect_uri=${oauthRedirectUri}`);
+        // ✅ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: Пытаемся извлечь параметры из state (если они там есть)
+        let stateClientId: string | undefined;
+        let stateRedirectUri: string | undefined;
+        if (state) {
+          try {
+            const decodedState = Buffer.from(state, 'base64').toString();
+            this.logger.log(`🔍 [GitHub Callback] Decoded state: ${decodedState.substring(0, 200)}...`);
+            const stateData = JSON.parse(decodedState);
+            this.logger.log(`🔍 [GitHub Callback] Parsed state data:`, JSON.stringify(stateData, null, 2));
+            if (stateData.client_id) {
+              stateClientId = stateData.client_id;
+              this.logger.log(`✅ [GitHub Callback] Found client_id in state: ${stateClientId}`);
+            }
+            if (stateData.redirect_uri) {
+              stateRedirectUri = stateData.redirect_uri;
+              this.logger.log(`✅ [GitHub Callback] Found redirect_uri in state: ${stateRedirectUri}`);
+            }
+            this.logger.log(`🔍 [GitHub Callback] Extracted from state: client_id=${stateClientId || 'none'}, redirect_uri=${stateRedirectUri || 'none'}`);
+          } catch (e) {
+            // State не содержит JSON, это нормально
+            this.logger.log(`⚠️ [GitHub Callback] Failed to parse state: ${e.message}`);
+            this.logger.log(`⚠️ [GitHub Callback] State value: ${state?.substring(0, 100)}...`);
+          }
+        } else {
+          this.logger.log(`⚠️ [GitHub Callback] No state parameter provided`);
+        }
+        
+        // ✅ ФИНАЛЬНЫЙ ПРИОРИТЕТ: Query > State > Cookies
+        const finalClientId = oauthClientId || stateClientId;
+        const finalRedirectUri = oauthRedirectUri || stateRedirectUri;
+        
+        // ✅ ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ: Логируем все параметры для отладки
+        this.logger.log(`🔍 [GitHub Callback] OAuth flow check:`, {
+          oauthFlowFlag,
+          referer,
+          isOAuthFlow,
+          clientIdFromQuery: clientIdFromQuery ? 'present' : 'missing',
+          redirectUriFromQuery: redirectUriFromQuery ? 'present' : 'missing',
+          oauthClientIdFromCookie: req.cookies?.oauth_client_id ? 'present' : 'missing',
+          oauthRedirectUriFromCookie: req.cookies?.oauth_redirect_uri ? 'present' : 'missing',
+          stateClientId: stateClientId ? 'present' : 'missing',
+          stateRedirectUri: stateRedirectUri ? 'present' : 'missing',
+          finalClientId: finalClientId ? 'present' : 'missing',
+          finalRedirectUri: finalRedirectUri ? 'present' : 'missing',
+          oauthScope: oauthScope ? 'present' : 'missing',
+          oauthState: oauthState ? 'present' : 'missing',
+          allCookies: Object.keys(req.cookies || {}).filter(k => k.startsWith('oauth_'))
+        });
+        
+        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Делаем как Telegram - возвращаем JSON вместо редиректа
+        // Frontend обработает ответ и редиректит на /api/oauth/authorize при OAuth flow
+        // Это позволяет frontend проверить OAuth flow и правильно обработать редирект
+        // ✅ ИСПОЛЬЗУЕМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ (из query, state или cookies)
+        const hasOAuthParams = !!(finalClientId || finalRedirectUri);
+        const isOAuthFlowForResponse = oauthFlowFlag || 
+                                       referer.includes('/oauth/authorize') || 
+                                       referer.includes('/api/oauth/authorize') ||
+                                       hasOAuthParams;
+        
+        this.logger.log(`🔍 [GitHub] OAuth flow check for response:`, {
+          oauthFlowFlag,
+          referer,
+          hasOAuthParams,
+          finalClientId: finalClientId ? 'present' : 'missing',
+          finalRedirectUri: finalRedirectUri ? 'present' : 'missing',
+          isOAuthFlowForResponse,
+          allCookies: Object.keys(req.cookies || {}).filter(k => k.startsWith('oauth_'))
+        });
+        
+        // ✅ ИСПРАВЛЕНИЕ: Возвращаем JSON ответ (как Telegram), чтобы frontend мог обработать OAuth flow
+        const response: any = {
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+          user: {
+            id: result.user.id,
+            email: result.user.email,
+            firstName: result.user.firstName,
+            lastName: result.user.lastName,
+          },
+        };
+        
+        // ✅ Добавляем OAuth флаги ТОЛЬКО если это действительно OAuth flow
+        // ✅ ИСПОЛЬЗУЕМ ФИНАЛЬНЫЕ ЗНАЧЕНИЯ (из query, state или cookies)
+        if (isOAuthFlowForResponse && finalClientId && finalRedirectUri) {
+          this.logger.log(`✅ OAuth flow detected in GitHub callback, adding oauthFlow flag to response (like Telegram)`);
+          this.logger.log(`OAuth params: client_id=${finalClientId}, redirect_uri=${finalRedirectUri}`);
           
-          // Сохраняем токен в cookie для /oauth/authorize (он будет использовать JWT из cookie)
-          res.cookie('temp_access_token', accessToken, {
+          response.oauthFlow = true;
+          response.returnTo = '/api/oauth/authorize';
+          response.clientId = finalClientId;
+          response.redirectUri = finalRedirectUri;
+          
+          // Сохраняем параметры в cookies для frontend (используем финальные значения)
+          const cookieOptions = {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 60000, // 1 минута
-          });
+            secure: true,
+            sameSite: 'none' as const,
+            maxAge: 600000,
+            path: '/',
+          };
           
-          // Редиректим на /oauth/authorize для продолжения OAuth flow
-          const apiBaseUrl = process.env.API_BASE_URL || 'https://loginus.startapus.com/api';
-          return res.redirect(`${apiBaseUrl}/oauth/authorize`);
+          res.cookie('oauth_flow_active', 'true', cookieOptions);
+          res.cookie('oauth_client_id', finalClientId, cookieOptions);
+          res.cookie('oauth_redirect_uri', finalRedirectUri, cookieOptions);
+          res.cookie('oauth_scope', oauthScope || 'openid email profile', cookieOptions);
+          if (oauthState) {
+            res.cookie('oauth_state_param', oauthState, cookieOptions);
+          }
+          
+          this.logger.log(`✅ [GitHub] Added OAuth flags to response, frontend will handle redirect`);
         } else {
           // Обычный вход - очищаем OAuth cookies
           this.logger.log(`ℹ️ Regular GitHub login (not OAuth flow), clearing OAuth cookies`);
+          this.logger.log(`🔍 [GitHub Callback] OAuth flow condition failed:`, {
+            isOAuthFlowForResponse,
+            hasFinalClientId: !!finalClientId,
+            hasFinalRedirectUri: !!finalRedirectUri,
+            clientIdFromQuery: !!clientIdFromQuery,
+            redirectUriFromQuery: !!redirectUriFromQuery,
+            clientIdFromCookie: !!req.cookies?.oauth_client_id,
+            redirectUriFromCookie: !!req.cookies?.oauth_redirect_uri,
+            clientIdFromState: !!stateClientId,
+            redirectUriFromState: !!stateRedirectUri,
+            reason: !isOAuthFlowForResponse ? 'not OAuth flow' : !finalClientId ? 'missing client_id' : !finalRedirectUri ? 'missing redirect_uri' : 'unknown'
+          });
           res.clearCookie('oauth_flow_active');
           res.clearCookie('oauth_client_id');
           res.clearCookie('oauth_redirect_uri');
@@ -578,26 +751,28 @@ export class MultiAuthController {
           res.clearCookie('oauth_state_param');
         }
         
-        // Перенаправляем на dashboard с токенами (обычный flow)
-        const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
-        const redirectUrl = `${frontendUrl}/dashboard.html?token=${accessToken}&refreshToken=${refreshToken}`;
-        this.logger.log(`GitHub OAuth redirecting to: ${redirectUrl}`);
-        return res.redirect(redirectUrl);
+        // ✅ УПРОЩЕНИЕ: Всегда возвращаем JSON (как Telegram)
+        // Frontend (github-login.html) обработает JSON и редиректит на /api/oauth/authorize или dashboard
+        this.logger.log(`Returning JSON response (GitHub user ${result.user.id}, OAuth flow: ${isOAuthFlowForResponse && finalClientId && finalRedirectUri ? 'yes' : 'no'})`);
+        return res.json(response);
       } else {
+        // ✅ ИСПРАВЛЕНИЕ: Возвращаем JSON с ошибкой (как Telegram), а не редирект
+        // Frontend ожидает JSON ответ и обработает ошибку
         this.logger.error(`GitHub OAuth failed: ${result.error}`);
-        // Перенаправляем на главную с ошибкой
-        const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
-        const redirectUrl = `${frontendUrl}/index.html?error=${encodeURIComponent(result.error || 'Unknown error')}`;
-        this.logger.log(`GitHub OAuth redirecting to error page: ${redirectUrl}`);
-        return res.redirect(redirectUrl);
+        return res.status(400).json({
+          error: result.error || 'Unknown error',
+          message: result.error || 'Unknown error',
+        });
       }
     } catch (error) {
+      // ✅ ИСПРАВЛЕНИЕ: Возвращаем JSON с ошибкой (как Telegram), а не редирект
+      // Frontend ожидает JSON ответ и обработает ошибку
       this.logger.error(`GitHub OAuth callback error: ${error.message}`);
       this.logger.error(error.stack);
-      const frontendUrl = process.env.FRONTEND_URL || 'https://loginus.startapus.com';
-      const redirectUrl = `${frontendUrl}/index.html?error=${encodeURIComponent(error.message || 'Unknown error')}`;
-      this.logger.log(`GitHub OAuth redirecting to error page: ${redirectUrl}`);
-      return res.redirect(redirectUrl);
+      return res.status(500).json({
+        error: error.message || 'Internal server error',
+        message: error.message || 'Internal server error',
+      });
     }
   }
 

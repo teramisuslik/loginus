@@ -2159,7 +2159,61 @@
             const urlTokenFromParams = urlParamsCheck.get('token');
             
             // Если токен в URL - это значит мы на index.html по ошибке, нужно редиректить на dashboard
+            // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Проверяем OAuth flow ПЕРЕД редиректом на dashboard
             if (urlTokenFromParams && nfaParamCheck !== 'true') {
+                console.log('🔑 Token found in URL params on index.html');
+                
+                // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, НЕ редиректим на dashboard, а на /api/oauth/authorize
+                const cookiesCheck = document.cookie.split(';');
+                const oauthFlowActiveCookie = cookiesCheck.find(c => c.trim().startsWith('oauth_flow_active='));
+                const oauthClientIdCookie = cookiesCheck.find(c => c.trim().startsWith('oauth_client_id='));
+                const oauthRedirectUriCookie = cookiesCheck.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                const hasOAuthCookies = !!(oauthFlowActiveCookie || oauthClientIdCookie || oauthRedirectUriCookie);
+                const oauthFlowFromUrl = urlParamsCheck.get('oauth_flow') === 'true';
+                const hasOAuthParamsInUrl = !!(urlParamsCheck.get('client_id') || urlParamsCheck.get('redirect_uri'));
+                const isOAuthFlow = oauthFlowFromUrl || hasOAuthParamsInUrl || hasOAuthCookies || sessionStorage.getItem('oauth_flow') === 'true';
+                
+                if (isOAuthFlow) {
+                    console.log('🔄 OAuth flow detected, redirecting to /api/oauth/authorize instead of dashboard');
+                    localStorage.setItem('authToken', urlTokenFromParams);
+                    localStorage.setItem('accessToken', urlTokenFromParams);
+                    const urlRefreshToken = urlParamsCheck.get('refreshToken');
+                    if (urlRefreshToken) {
+                        localStorage.setItem('refreshToken', urlRefreshToken);
+                    }
+                    
+                    // Сохраняем токен в cookie для /oauth/authorize
+                    document.cookie = `temp_access_token=${urlTokenFromParams}; path=/; max-age=60; SameSite=None; Secure`;
+                    
+                    // Восстанавливаем OAuth параметры из cookies, sessionStorage и URL
+                    const getCookie = (name) => {
+                        const cookies = document.cookie.split(';');
+                        const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                        return cookie ? cookie.split('=')[1] : null;
+                    };
+                    
+                    const savedClientId = urlParamsCheck.get('client_id') || getCookie('oauth_client_id') || sessionStorage.getItem('oauth_client_id');
+                    const savedRedirectUri = urlParamsCheck.get('redirect_uri') || getCookie('oauth_redirect_uri') || sessionStorage.getItem('oauth_redirect_uri');
+                    const savedResponseType = urlParamsCheck.get('response_type') || getCookie('oauth_response_type') || sessionStorage.getItem('oauth_response_type') || 'code';
+                    const savedScope = urlParamsCheck.get('scope') || getCookie('oauth_scope') || sessionStorage.getItem('oauth_scope');
+                    const savedState = urlParamsCheck.get('state') || getCookie('oauth_state_param') || sessionStorage.getItem('oauth_state_param');
+                    
+                    // Формируем URL с параметрами
+                    const oauthParams = new URLSearchParams();
+                    if (savedClientId) oauthParams.set('client_id', savedClientId);
+                    if (savedRedirectUri) oauthParams.set('redirect_uri', savedRedirectUri);
+                    if (savedResponseType) oauthParams.set('response_type', savedResponseType);
+                    if (savedScope) oauthParams.set('scope', savedScope);
+                    if (savedState) oauthParams.set('state', savedState);
+                    
+                    const apiBaseUrl = window.API_BASE_URL || 'https://loginus.startapus.com';
+                    const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                    console.log('🔄 Redirecting to OAuth authorize:', redirectUrl);
+                    window.location.href = redirectUrl;
+                    return;
+                }
+                
+                // Обычный flow - редиректим на dashboard
                 console.log('🔑 Token found in URL params on index.html - redirecting to dashboard');
                 localStorage.setItem('authToken', urlTokenFromParams);
                 localStorage.setItem('accessToken', urlTokenFromParams);
@@ -2463,30 +2517,51 @@
                     const scopeTelegram = urlParamsTelegram.get('scope');
                     const stateTelegram = urlParamsTelegram.get('state');
                     
-                    // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем ВСЕ параметры OAuth из URL
-                    if (clientIdTelegram || redirectUriTelegram || window.location.pathname === '/oauth/authorize') {
-                        console.log('🔄 [proceedWithSelectedMethod] Detected OAuth flow, saving all params to sessionStorage');
+                    // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сохраняем ВСЕ параметры OAuth из URL и cookies (как для GitHub)
+                    // Также проверяем cookies на наличие OAuth параметров
+                    const cookiesTelegram = document.cookie.split(';');
+                    const oauthClientIdCookieTelegram = cookiesTelegram.find(c => c.trim().startsWith('oauth_client_id='));
+                    const oauthRedirectUriCookieTelegram = cookiesTelegram.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                    const oauthScopeCookieTelegram = cookiesTelegram.find(c => c.trim().startsWith('oauth_scope='));
+                    const oauthStateCookieTelegram = cookiesTelegram.find(c => c.trim().startsWith('oauth_state_param='));
+                    
+                    // Приоритет: URL параметры > cookies > sessionStorage
+                    const finalClientIdTelegram = clientIdTelegram || (oauthClientIdCookieTelegram ? oauthClientIdCookieTelegram.split('=')[1] : null) || sessionStorage.getItem('oauth_client_id');
+                    const finalRedirectUriTelegram = redirectUriTelegram || (oauthRedirectUriCookieTelegram ? oauthRedirectUriCookieTelegram.split('=')[1] : null) || sessionStorage.getItem('oauth_redirect_uri');
+                    const finalResponseTypeTelegram = responseTypeTelegram || 'code';
+                    const finalScopeTelegram = scopeTelegram || (oauthScopeCookieTelegram ? oauthScopeCookieTelegram.split('=')[1] : null) || sessionStorage.getItem('oauth_scope');
+                    const finalStateTelegram = stateTelegram || (oauthStateCookieTelegram ? oauthStateCookieTelegram.split('=')[1] : null) || sessionStorage.getItem('oauth_state_param');
+                    
+                    if (finalClientIdTelegram || finalRedirectUriTelegram || window.location.pathname === '/oauth/authorize' || oauthClientIdCookieTelegram || oauthRedirectUriCookieTelegram) {
+                        console.log('🔄 [proceedWithSelectedMethod] Detected OAuth flow for Telegram, saving all params to sessionStorage');
                         sessionStorage.setItem('oauth_flow', 'true');
-                        if (clientIdTelegram) {
-                            sessionStorage.setItem('oauth_client_id', clientIdTelegram);
+                        if (finalClientIdTelegram) {
+                            sessionStorage.setItem('oauth_client_id', finalClientIdTelegram);
                         }
-                        if (redirectUriTelegram) {
-                            sessionStorage.setItem('oauth_redirect_uri', redirectUriTelegram);
+                        if (finalRedirectUriTelegram) {
+                            sessionStorage.setItem('oauth_redirect_uri', finalRedirectUriTelegram);
                         }
-                        if (responseTypeTelegram) {
-                            sessionStorage.setItem('oauth_response_type', responseTypeTelegram);
+                        if (finalResponseTypeTelegram) {
+                            sessionStorage.setItem('oauth_response_type', finalResponseTypeTelegram);
                         }
-                        if (scopeTelegram) {
-                            sessionStorage.setItem('oauth_scope', scopeTelegram);
+                        if (finalScopeTelegram) {
+                            sessionStorage.setItem('oauth_scope', finalScopeTelegram);
                         }
-                        if (stateTelegram) {
-                            sessionStorage.setItem('oauth_state_param', stateTelegram);
+                        if (finalStateTelegram) {
+                            sessionStorage.setItem('oauth_state_param', finalStateTelegram);
                         }
                         if (returnToTelegram) {
                             sessionStorage.setItem('return_to', returnToTelegram);
                         } else {
                             sessionStorage.setItem('return_to', '/api/oauth/authorize');
                         }
+                        console.log('✅ [proceedWithSelectedMethod] Saved Telegram OAuth params:', {
+                            client_id: finalClientIdTelegram,
+                            redirect_uri: finalRedirectUriTelegram,
+                            response_type: finalResponseTypeTelegram,
+                            scope: finalScopeTelegram,
+                            state: finalStateTelegram
+                        });
                     } else if (oauthFlowTelegram && returnToTelegram) {
                         console.log('🔄 Saving OAuth flow params to sessionStorage:', { oauthFlow: oauthFlowTelegram, returnTo: returnToTelegram, clientId: clientIdTelegram });
                         sessionStorage.setItem('oauth_flow', 'true');
@@ -3943,10 +4018,104 @@
                 
                 // Сохраняем токен и перенаправляем пользователя
                 if (response.accessToken) {
-                    localStorage.setItem('authToken', response.accessToken);
+                    const authToken = response.accessToken;
+                    localStorage.setItem('authToken', authToken);
                     localStorage.setItem('refreshToken', response.refreshToken);
                     
-                    // Redirect based on role
+                    // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize (как в login)
+                    const urlParamsReg = new URLSearchParams(window.location.search);
+                    const oauthFlowFromUrl = urlParamsReg.get('oauth_flow') === 'true';
+                    const returnToFromUrl = urlParamsReg.get('return_to');
+                    const clientIdFromUrl = urlParamsReg.get('client_id');
+                    const redirectUriFromUrl = urlParamsReg.get('redirect_uri');
+                    const isOnOAuthAuthorizePage = window.location.pathname === '/oauth/authorize' || window.location.pathname.includes('/oauth/authorize');
+                    const hasOAuthParamsInUrl = !!(clientIdFromUrl || redirectUriFromUrl || isOnOAuthAuthorizePage);
+                    
+                    const oauthFlowFromStorage = sessionStorage.getItem('oauth_flow') === 'true';
+                    const returnToFromStorage = sessionStorage.getItem('return_to');
+                    
+                    const cookies = document.cookie.split(';');
+                    const oauthFlowActiveCookie = cookies.find(c => c.trim().startsWith('oauth_flow_active='));
+                    const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+                    const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                    
+                    // Сохраняем параметры в sessionStorage если их нет
+                    if (oauthFlowActiveCookie && !oauthFlowFromStorage) {
+                        sessionStorage.setItem('oauth_flow', 'true');
+                    }
+                    if (oauthRedirectUriCookie && !returnToFromStorage) {
+                        sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                        sessionStorage.setItem('oauth_flow', 'true');
+                    }
+                    if (hasOAuthParamsInUrl && !oauthFlowFromStorage) {
+                        sessionStorage.setItem('oauth_flow', 'true');
+                        sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                        if (clientIdFromUrl) {
+                            sessionStorage.setItem('oauth_client_id', clientIdFromUrl);
+                        }
+                        if (redirectUriFromUrl) {
+                            sessionStorage.setItem('oauth_redirect_uri', redirectUriFromUrl);
+                        }
+                    }
+                    
+                    const oauthFlow = hasOAuthParamsInUrl || oauthFlowFromUrl || oauthFlowFromStorage || oauthFlowActiveCookie || oauthRedirectUriCookie;
+                    const returnTo = returnToFromUrl || returnToFromStorage || (oauthRedirectUriCookie ? '/api/oauth/authorize' : (hasOAuthParamsInUrl ? '/api/oauth/authorize' : null));
+                    
+                    // Проверяем как старый формат (/oauth/authorize), так и новый (/api/oauth/authorize)
+                    if (oauthFlow && (returnTo === '/oauth/authorize' || returnTo === '/api/oauth/authorize' || oauthRedirectUriCookie)) {
+                        console.log('🔄 OAuth flow detected after registration, redirecting to /api/oauth/authorize');
+                        
+                        // Сохраняем токен в cookie для /oauth/authorize
+                        const isSecure = window.location.protocol === 'https:';
+                        const cookieOptions = [
+                            `temp_access_token=${authToken}`,
+                            'path=/',
+                            'max-age=60',
+                            'SameSite=Lax'
+                        ];
+                        if (isSecure) {
+                            cookieOptions.push('Secure');
+                        }
+                        document.cookie = cookieOptions.join('; ');
+                        
+                        setTimeout(() => {
+                            isRedirecting = true;
+                            const apiBaseUrl = window.API_BASE_URL || 'https://loginus.startapus.com';
+                            
+                            // Восстанавливаем все параметры OAuth из sessionStorage
+                            const savedClientId = sessionStorage.getItem('oauth_client_id');
+                            const savedRedirectUri = sessionStorage.getItem('oauth_redirect_uri');
+                            const savedResponseType = sessionStorage.getItem('oauth_response_type') || 'code';
+                            const savedScope = sessionStorage.getItem('oauth_scope');
+                            const savedState = sessionStorage.getItem('oauth_state_param');
+                            
+                            // Собираем параметры для URL
+                            const oauthParams = new URLSearchParams();
+                            if (savedClientId) {
+                                oauthParams.set('client_id', savedClientId);
+                            }
+                            if (savedRedirectUri) {
+                                oauthParams.set('redirect_uri', savedRedirectUri);
+                            }
+                            if (savedResponseType) {
+                                oauthParams.set('response_type', savedResponseType);
+                            }
+                            if (savedScope) {
+                                oauthParams.set('scope', savedScope);
+                            }
+                            if (savedState) {
+                                oauthParams.set('state', savedState);
+                            }
+                            
+                            // Формируем URL с параметрами
+                            const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                            console.log('🔄 [Register] Redirecting to:', redirectUrl);
+                            window.location.href = redirectUrl;
+                        }, 1000);
+                        return;
+                    }
+                    
+                    // Redirect based on role (обычный flow)
                     setTimeout(() => {
                         redirectBasedOnRole(response.user);
                     }, 1000);
@@ -4001,11 +4170,105 @@
                 
                 // Save tokens
                 if (response.accessToken) {
-                    localStorage.setItem('authToken', response.accessToken);
+                    const authToken = response.accessToken;
+                    localStorage.setItem('authToken', authToken);
                     localStorage.setItem('refreshToken', response.refreshToken);
+                    
+                    // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize (как в login)
+                    const urlParamsComplete = new URLSearchParams(window.location.search);
+                    const oauthFlowFromUrl = urlParamsComplete.get('oauth_flow') === 'true';
+                    const returnToFromUrl = urlParamsComplete.get('return_to');
+                    const clientIdFromUrl = urlParamsComplete.get('client_id');
+                    const redirectUriFromUrl = urlParamsComplete.get('redirect_uri');
+                    const isOnOAuthAuthorizePage = window.location.pathname === '/oauth/authorize' || window.location.pathname.includes('/oauth/authorize');
+                    const hasOAuthParamsInUrl = !!(clientIdFromUrl || redirectUriFromUrl || isOnOAuthAuthorizePage);
+                    
+                    const oauthFlowFromStorage = sessionStorage.getItem('oauth_flow') === 'true';
+                    const returnToFromStorage = sessionStorage.getItem('return_to');
+                    
+                    const cookies = document.cookie.split(';');
+                    const oauthFlowActiveCookie = cookies.find(c => c.trim().startsWith('oauth_flow_active='));
+                    const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+                    const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                    
+                    // Сохраняем параметры в sessionStorage если их нет
+                    if (oauthFlowActiveCookie && !oauthFlowFromStorage) {
+                        sessionStorage.setItem('oauth_flow', 'true');
+                    }
+                    if (oauthRedirectUriCookie && !returnToFromStorage) {
+                        sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                        sessionStorage.setItem('oauth_flow', 'true');
+                    }
+                    if (hasOAuthParamsInUrl && !oauthFlowFromStorage) {
+                        sessionStorage.setItem('oauth_flow', 'true');
+                        sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                        if (clientIdFromUrl) {
+                            sessionStorage.setItem('oauth_client_id', clientIdFromUrl);
+                        }
+                        if (redirectUriFromUrl) {
+                            sessionStorage.setItem('oauth_redirect_uri', redirectUriFromUrl);
+                        }
+                    }
+                    
+                    const oauthFlow = hasOAuthParamsInUrl || oauthFlowFromUrl || oauthFlowFromStorage || oauthFlowActiveCookie || oauthRedirectUriCookie;
+                    const returnTo = returnToFromUrl || returnToFromStorage || (oauthRedirectUriCookie ? '/api/oauth/authorize' : (hasOAuthParamsInUrl ? '/api/oauth/authorize' : null));
+                    
+                    // Проверяем как старый формат (/oauth/authorize), так и новый (/api/oauth/authorize)
+                    if (oauthFlow && (returnTo === '/oauth/authorize' || returnTo === '/api/oauth/authorize' || oauthRedirectUriCookie)) {
+                        console.log('🔄 OAuth flow detected after complete registration, redirecting to /api/oauth/authorize');
+                        
+                        // Сохраняем токен в cookie для /oauth/authorize
+                        const isSecure = window.location.protocol === 'https:';
+                        const cookieOptions = [
+                            `temp_access_token=${authToken}`,
+                            'path=/',
+                            'max-age=60',
+                            'SameSite=Lax'
+                        ];
+                        if (isSecure) {
+                            cookieOptions.push('Secure');
+                        }
+                        document.cookie = cookieOptions.join('; ');
+                        
+                        setTimeout(() => {
+                            isRedirecting = true;
+                            const apiBaseUrl = window.API_BASE_URL || 'https://loginus.startapus.com';
+                            
+                            // Восстанавливаем все параметры OAuth из sessionStorage
+                            const savedClientId = sessionStorage.getItem('oauth_client_id');
+                            const savedRedirectUri = sessionStorage.getItem('oauth_redirect_uri');
+                            const savedResponseType = sessionStorage.getItem('oauth_response_type') || 'code';
+                            const savedScope = sessionStorage.getItem('oauth_scope');
+                            const savedState = sessionStorage.getItem('oauth_state_param');
+                            
+                            // Собираем параметры для URL
+                            const oauthParams = new URLSearchParams();
+                            if (savedClientId) {
+                                oauthParams.set('client_id', savedClientId);
+                            }
+                            if (savedRedirectUri) {
+                                oauthParams.set('redirect_uri', savedRedirectUri);
+                            }
+                            if (savedResponseType) {
+                                oauthParams.set('response_type', savedResponseType);
+                            }
+                            if (savedScope) {
+                                oauthParams.set('scope', savedScope);
+                            }
+                            if (savedState) {
+                                oauthParams.set('state', savedState);
+                            }
+                            
+                            // Формируем URL с параметрами
+                            const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                            console.log('🔄 [Complete Register] Redirecting to:', redirectUrl);
+                            window.location.href = redirectUrl;
+                        }, 1000);
+                        return;
+                    }
                 }
                 
-                // Redirect based on role
+                // Redirect based on role (обычный flow)
                 setTimeout(() => {
                     redirectBasedOnRole(response.user);
                 }, 1000);
@@ -4045,8 +4308,8 @@
 
             try {
                 // Извлекаем реферальный код из URL параметров или localStorage
-                const urlParams = new URLSearchParams(window.location.search);
-                const referralCodeFromUrl = urlParams.get('ref') || urlParams.get('referral') || urlParams.get('referralCode');
+                const urlParamsRef = new URLSearchParams(window.location.search);
+                const referralCodeFromUrl = urlParamsRef.get('ref') || urlParamsRef.get('referral') || urlParamsRef.get('referralCode');
                 const referralCodeFromStorage = localStorage.getItem('pendingReferralCode');
                 const referralCode = referralCodeFromUrl || referralCodeFromStorage;
                 
@@ -4081,7 +4344,100 @@
 
                 showMessage('Регистрация завершена! Добро пожаловать!', 'success');
                 
-                // Redirect based on role
+                // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize (как в login)
+                const urlParamsSmart = new URLSearchParams(window.location.search);
+                const oauthFlowFromUrl = urlParamsSmart.get('oauth_flow') === 'true';
+                const returnToFromUrl = urlParamsSmart.get('return_to');
+                const clientIdFromUrl = urlParamsSmart.get('client_id');
+                const redirectUriFromUrl = urlParamsSmart.get('redirect_uri');
+                const isOnOAuthAuthorizePage = window.location.pathname === '/oauth/authorize' || window.location.pathname.includes('/oauth/authorize');
+                const hasOAuthParamsInUrl = !!(clientIdFromUrl || redirectUriFromUrl || isOnOAuthAuthorizePage);
+                
+                const oauthFlowFromStorage = sessionStorage.getItem('oauth_flow') === 'true';
+                const returnToFromStorage = sessionStorage.getItem('return_to');
+                
+                const cookies = document.cookie.split(';');
+                const oauthFlowActiveCookie = cookies.find(c => c.trim().startsWith('oauth_flow_active='));
+                const oauthClientIdCookie = cookies.find(c => c.trim().startsWith('oauth_client_id='));
+                const oauthRedirectUriCookie = cookies.find(c => c.trim().startsWith('oauth_redirect_uri='));
+                
+                // Сохраняем параметры в sessionStorage если их нет
+                if (oauthFlowActiveCookie && !oauthFlowFromStorage) {
+                    sessionStorage.setItem('oauth_flow', 'true');
+                }
+                if (oauthRedirectUriCookie && !returnToFromStorage) {
+                    sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                    sessionStorage.setItem('oauth_flow', 'true');
+                }
+                if (hasOAuthParamsInUrl && !oauthFlowFromStorage) {
+                    sessionStorage.setItem('oauth_flow', 'true');
+                    sessionStorage.setItem('return_to', '/api/oauth/authorize');
+                    if (clientIdFromUrl) {
+                        sessionStorage.setItem('oauth_client_id', clientIdFromUrl);
+                    }
+                    if (redirectUriFromUrl) {
+                        sessionStorage.setItem('oauth_redirect_uri', redirectUriFromUrl);
+                    }
+                }
+                
+                const oauthFlow = hasOAuthParamsInUrl || oauthFlowFromUrl || oauthFlowFromStorage || oauthFlowActiveCookie || oauthRedirectUriCookie;
+                const returnTo = returnToFromUrl || returnToFromStorage || (oauthRedirectUriCookie ? '/api/oauth/authorize' : (hasOAuthParamsInUrl ? '/api/oauth/authorize' : null));
+                
+                // Проверяем как старый формат (/oauth/authorize), так и новый (/api/oauth/authorize)
+                if (oauthFlow && (returnTo === '/oauth/authorize' || returnTo === '/api/oauth/authorize' || oauthRedirectUriCookie)) {
+                    console.log('🔄 OAuth flow detected after smart registration, redirecting to /api/oauth/authorize');
+                    
+                    // Сохраняем токен в cookie для /oauth/authorize
+                    const isSecure = window.location.protocol === 'https:';
+                    const cookieOptions = [
+                        `temp_access_token=${authToken}`,
+                        'path=/',
+                        'max-age=60',
+                        'SameSite=Lax'
+                    ];
+                    if (isSecure) {
+                        cookieOptions.push('Secure');
+                    }
+                    document.cookie = cookieOptions.join('; ');
+                    
+                    setTimeout(() => {
+                        isRedirecting = true;
+                        const apiBaseUrl = window.API_BASE_URL || 'https://loginus.startapus.com';
+                        
+                        // Восстанавливаем все параметры OAuth из sessionStorage
+                        const savedClientId = sessionStorage.getItem('oauth_client_id');
+                        const savedRedirectUri = sessionStorage.getItem('oauth_redirect_uri');
+                        const savedResponseType = sessionStorage.getItem('oauth_response_type') || 'code';
+                        const savedScope = sessionStorage.getItem('oauth_scope');
+                        const savedState = sessionStorage.getItem('oauth_state_param');
+                        
+                        // Собираем параметры для URL
+                        const oauthParams = new URLSearchParams();
+                        if (savedClientId) {
+                            oauthParams.set('client_id', savedClientId);
+                        }
+                        if (savedRedirectUri) {
+                            oauthParams.set('redirect_uri', savedRedirectUri);
+                        }
+                        if (savedResponseType) {
+                            oauthParams.set('response_type', savedResponseType);
+                        }
+                        if (savedScope) {
+                            oauthParams.set('scope', savedScope);
+                        }
+                        if (savedState) {
+                            oauthParams.set('state', savedState);
+                        }
+                        
+                        // Формируем URL с параметрами
+                        const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                        console.log('🔄 [Smart Register] Redirecting to:', redirectUrl);
+                        window.location.href = redirectUrl;
+                    }, 1000);
+                    return;
+                }
+                
+                // Redirect based on role (обычный flow)
                 setTimeout(() => {
                     redirectBasedOnRole(response.user);
                 }, 1000);
@@ -4230,12 +4586,39 @@
                 // ✅ ИСПРАВЛЕНИЕ: API_BASE_URL не содержит /api, нужно добавить
                 const apiBaseUrl = window.API_BASE_URL || 'https://loginus.startapus.com';
                 
-                // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Восстанавливаем все параметры OAuth из sessionStorage
-                const savedClientId = sessionStorage.getItem('oauth_client_id');
-                const savedRedirectUri = sessionStorage.getItem('oauth_redirect_uri');
-                const savedResponseType = sessionStorage.getItem('oauth_response_type') || 'code';
-                const savedScope = sessionStorage.getItem('oauth_scope');
-                const savedState = sessionStorage.getItem('oauth_state_param');
+                // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Восстанавливаем все параметры OAuth из URL, cookies и sessionStorage (в таком порядке приоритета)
+                // 1. Сначала проверяем URL параметры (самый приоритетный источник)
+                const urlClientId = urlParams.get('client_id');
+                const urlRedirectUri = urlParams.get('redirect_uri');
+                const urlResponseType = urlParams.get('response_type');
+                const urlScope = urlParams.get('scope');
+                const urlState = urlParams.get('state');
+                
+                // 2. Затем проверяем cookies (если нет в URL)
+                const getCookie = (name) => {
+                    const cookies = document.cookie.split(';');
+                    const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                    return cookie ? cookie.split('=')[1] : null;
+                };
+                const cookieClientId = getCookie('oauth_client_id');
+                const cookieRedirectUri = getCookie('oauth_redirect_uri');
+                const cookieResponseType = getCookie('oauth_response_type');
+                const cookieScope = getCookie('oauth_scope');
+                const cookieState = getCookie('oauth_state_param');
+                
+                // 3. И наконец проверяем sessionStorage (если нет ни в URL, ни в cookies)
+                const savedClientId = urlClientId || cookieClientId || sessionStorage.getItem('oauth_client_id');
+                const savedRedirectUri = urlRedirectUri || cookieRedirectUri || sessionStorage.getItem('oauth_redirect_uri');
+                const savedResponseType = urlResponseType || cookieResponseType || sessionStorage.getItem('oauth_response_type') || 'code';
+                const savedScope = urlScope || cookieScope || sessionStorage.getItem('oauth_scope');
+                const savedState = urlState || cookieState || sessionStorage.getItem('oauth_state_param');
+                
+                console.log('🔍 [redirectBasedOnRole] OAuth params sources:', {
+                    url: { client_id: urlClientId, redirect_uri: urlRedirectUri },
+                    cookies: { client_id: cookieClientId, redirect_uri: cookieRedirectUri },
+                    sessionStorage: { client_id: sessionStorage.getItem('oauth_client_id'), redirect_uri: sessionStorage.getItem('oauth_redirect_uri') },
+                    final: { client_id: savedClientId, redirect_uri: savedRedirectUri }
+                });
                 
                 // Собираем параметры для URL
                 const oauthParams = new URLSearchParams();

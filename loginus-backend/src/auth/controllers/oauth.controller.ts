@@ -178,38 +178,27 @@ export class OAuthController {
     if (!user) {
       // Сохраняем параметры OAuth в cookie для последующего использования (используем финальные значения)
       // ✅ УСТАНОВКА ФЛАГА OAuth FLOW: Устанавливаем специальный флаг, что это реальный OAuth flow
-      res.cookie('oauth_flow_active', 'true', {
+      // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Используем sameSite: 'none' и secure: true для кросс-доменных редиректов
+      // Это гарантирует, что cookies сохранятся при переходе на GitHub и обратно
+      const cookieOptions = {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: true, // Всегда true для sameSite: 'none'
+        sameSite: 'none' as const, // Разрешаем кросс-доменные запросы
         maxAge: 600000, // 10 минут
-      });
-      res.cookie('oauth_client_id', finalClientId, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 600000, // 10 минут
-      });
-      res.cookie('oauth_redirect_uri', finalRedirectUri, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 600000,
-      });
-      res.cookie('oauth_scope', finalScope, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 600000,
-      });
+        path: '/', // Убеждаемся, что cookies доступны на всех путях
+      };
+      
+      res.cookie('oauth_flow_active', 'true', cookieOptions);
+      res.cookie('oauth_client_id', finalClientId, cookieOptions);
+      res.cookie('oauth_redirect_uri', finalRedirectUri, cookieOptions);
+      res.cookie('oauth_scope', finalScope, cookieOptions);
       if (finalState) {
-        res.cookie('oauth_state_param', finalState, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 600000,
-        });
+        res.cookie('oauth_state_param', finalState, cookieOptions);
       }
+      
+      console.log(`✅ [OAuth] Saved OAuth params to cookies with sameSite: 'none' for cross-domain redirects`);
+      console.log(`✅ [OAuth] Saved redirect_uri to cookie: ${finalRedirectUri}`);
+      console.log(`🔍 [OAuth] redirect_uri source: ${redirectUri ? 'query param' : 'cookie (restored)'}`);
 
       // Редиректим на страницу авторизации Loginus с параметрами OAuth flow
       const frontendUrl = process.env.FRONTEND_URL || 'https://vselena.ldmco.ru';
@@ -249,6 +238,33 @@ export class OAuthController {
     res.clearCookie('oauth_scope');
     res.clearCookie('oauth_state_param');
 
+    // ✅ КРИТИЧЕСКОЕ ЛОГИРОВАНИЕ: Проверяем, что redirect_uri правильный
+    console.log(`🔍 [OAuth] ========== FINAL REDIRECT CHECK ==========`);
+    console.log(`🔍 [OAuth] finalRedirectUri: ${finalRedirectUri}`);
+    console.log(`🔍 [OAuth] finalRedirectUri type: ${typeof finalRedirectUri}`);
+    console.log(`🔍 [OAuth] Is finalRedirectUri a Loginus URL? ${finalRedirectUri?.includes('loginus') || finalRedirectUri?.includes('vselena')}`);
+    
+    // ✅ ВАЛИДАЦИЯ: Проверяем, что redirect_uri не указывает на Loginus frontend страницы
+    // vselena.ldmco.ru - это домен сервиса, его НЕ блокируем
+    // Блокируем только loginus.startapus.com (домен Loginus)
+    if (finalRedirectUri && (
+      finalRedirectUri.includes('loginus.startapus.com/index.html') || 
+      finalRedirectUri.includes('loginus.startapus.com/dashboard.html') ||
+      (finalRedirectUri.includes('loginus.startapus.com') && (finalRedirectUri.endsWith('/index.html') || finalRedirectUri.endsWith('/dashboard.html')))
+    )) {
+      console.error(`❌ [OAuth] ERROR: redirect_uri points to Loginus frontend page instead of service!`);
+      console.error(`❌ [OAuth] redirect_uri: ${finalRedirectUri}`);
+      console.error(`❌ [OAuth] This should be the service URL, not Loginus frontend page`);
+      throw new BadRequestException(`Invalid redirect_uri: cannot redirect to Loginus frontend. Expected service URL, got: ${finalRedirectUri}`);
+    }
+    
+    // ✅ ЛОГИРОВАНИЕ: Логируем redirect_uri для отладки
+    console.log(`✅ [OAuth] Redirect URI validated: ${finalRedirectUri}`);
+    if (finalRedirectUri && finalRedirectUri.includes('loginus.startapus.com')) {
+      console.warn(`⚠️ [OAuth] WARNING: redirect_uri points to Loginus domain: ${finalRedirectUri}`);
+      console.warn(`⚠️ [OAuth] This should be a service URL, not Loginus URL`);
+    }
+
     // Редиректим на redirect_uri с code
     const redirectUrl = new URL(finalRedirectUri);
     redirectUrl.searchParams.set('code', code);
@@ -257,7 +273,7 @@ export class OAuthController {
     }
 
     // ✅ ЛОГИРОВАНИЕ: Логируем редирект для отладки
-    console.log(`✅ [OAuth] User authorized, redirecting to AI Aggregator`);
+    console.log(`✅ [OAuth] User authorized, redirecting to service`);
     console.log(`✅ [OAuth] Redirect URI: ${finalRedirectUri}`);
     console.log(`✅ [OAuth] Full redirect URL: ${redirectUrl.toString()}`);
     console.log(`✅ [OAuth] Code: ${code.substring(0, 10)}...`);

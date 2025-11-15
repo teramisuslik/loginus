@@ -257,13 +257,50 @@
             }
             
             try {
-                // Получаем URL для авторизации GitHub
-                const url = forceLogin 
-                    ? `${API_BASE}/auth/multi/oauth/github/url?forceLogin=true`
-                    : `${API_BASE}/auth/multi/oauth/github/url`;
+                // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Передаем OAuth параметры из sessionStorage через query параметры
+                // Это гарантирует, что backend сможет их сохранить в state
+                const oauthClientId = sessionStorage.getItem('oauth_client_id');
+                const oauthRedirectUri = sessionStorage.getItem('oauth_redirect_uri');
+                const oauthScope = sessionStorage.getItem('oauth_scope');
+                const oauthState = sessionStorage.getItem('oauth_state_param');
+                
+                console.log('🔍 [GitHub Login] OAuth params from sessionStorage:', {
+                    client_id: oauthClientId ? 'present' : 'missing',
+                    redirect_uri: oauthRedirectUri ? 'present' : 'missing',
+                    scope: oauthScope ? 'present' : 'missing',
+                    state: oauthState ? 'present' : 'missing'
+                });
+                
+                // Формируем URL с OAuth параметрами (если они есть)
+                const urlParams = new URLSearchParams();
+                if (forceLogin) {
+                    urlParams.set('forceLogin', 'true');
+                }
+                if (oauthClientId) {
+                    urlParams.set('oauth_client_id', oauthClientId);
+                }
+                if (oauthRedirectUri) {
+                    urlParams.set('oauth_redirect_uri', oauthRedirectUri);
+                }
+                if (oauthScope) {
+                    urlParams.set('oauth_scope', oauthScope);
+                }
+                if (oauthState) {
+                    urlParams.set('oauth_state', oauthState);
+                }
+                
+                const url = `${API_BASE}/auth/multi/oauth/github/url${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
                 
                 console.log('📤 Requesting GitHub OAuth URL:', url, 'forceLogin:', forceLogin);
-                const response = await fetch(url);
+                console.log('📤 OAuth params in URL:', {
+                    oauth_client_id: oauthClientId ? 'present' : 'missing',
+                    oauth_redirect_uri: oauthRedirectUri ? 'present' : 'missing'
+                });
+                
+                // ✅ ВАЖНО: Передаем cookies с credentials: 'include'
+                const response = await fetch(url, {
+                    credentials: 'include', // Важно для передачи cookies
+                });
                 const data = await response.json();
                 
                 console.log('GitHub auth data:', data);
@@ -291,17 +328,196 @@
             }
         }
 
-        // Проверка callback от GitHub или автоматический запуск с forceLogin
+        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Обрабатываем callback от GitHub (как Telegram)
+        // GitHub перенаправит обратно с code, мы вызываем callback endpoint и обрабатываем JSON-ответ
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const forceLogin = urlParams.get('forceLogin') === 'true';
         
         if (code) {
             document.getElementById('loading').style.display = 'block';
+            console.log('🔑 GitHub callback code received, processing...');
             
-            // GitHub перенаправит обратно на /api/auth/multi/oauth/github/callback
-            // и backend обработает это
-            // Здесь просто ждем обработки
+            // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Вызываем callback endpoint с code (backend вернет JSON, как Telegram)
+            // Backend всегда возвращает JSON, который мы обрабатываем здесь
+            const state = urlParams.get('state');
+            fetch(`${API_BASE}/auth/multi/oauth/github/callback?code=${code}${state ? '&state=' + encodeURIComponent(state) : ''}`, {
+                method: 'GET',
+                credentials: 'include', // Важно для cookies
+                headers: {
+                    'Accept': 'application/json', // Указываем, что ожидаем JSON
+                },
+            })
+            .then(async response => {
+                // ✅ ИСПРАВЛЕНИЕ: Пытаемся распарсить JSON даже если response.ok = false
+                // Backend теперь всегда возвращает JSON (как Telegram), даже при ошибках
+                let data;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                    // Если не удалось распарсить JSON, выбрасываем ошибку
+                    throw new Error(`HTTP error! status: ${response.status}, message: Failed to parse response`);
+                }
+                
+                // Если response.ok = false, но есть JSON с ошибкой, обрабатываем её
+                if (!response.ok && data.error) {
+                    console.error('❌ GitHub OAuth error:', data.error);
+                    alert('Ошибка авторизации через GitHub: ' + (data.error || data.message || 'Unknown error'));
+                    window.location.href = '/index.html';
+                    return;
+                }
+                
+                // Если response.ok = false, но нет JSON с ошибкой, выбрасываем ошибку
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}, message: ${data.message || 'Unknown error'}`);
+                }
+                
+                console.log('✅ GitHub callback response:', data);
+                
+                if (data.error) {
+                    console.error('❌ GitHub OAuth error:', data.error);
+                    alert('Ошибка авторизации через GitHub: ' + (data.error || data.message || 'Unknown error'));
+                    window.location.href = '/index.html';
+                    return;
+                }
+                
+                if (data.accessToken) {
+                    console.log('AccessToken found, setting tokens');
+                    localStorage.setItem('authToken', data.accessToken);
+                    localStorage.setItem('accessToken', data.accessToken);
+                    if (data.refreshToken) {
+                        localStorage.setItem('refreshToken', data.refreshToken);
+                    }
+                    
+                    // ✅ ПРОВЕРКА OAuth FLOW: Если мы в OAuth flow, редиректим на /api/oauth/authorize
+                    // Проверяем параметры из ответа сервера (если backend вернул oauthFlow флаг)
+                    const oauthFlowFromResponse = data.oauthFlow === true || data.oauthFlow === 'true';
+                    const returnToFromResponse = data.returnTo;
+                    
+                    // Также проверяем параметры из URL и sessionStorage (для обратной совместимости)
+                    const oauthFlowFromUrl = urlParams.get('oauth_flow') === 'true';
+                    const returnToFromUrl = urlParams.get('return_to');
+                    
+                    const storedOAuthFlow = sessionStorage.getItem('oauth_flow') === 'true';
+                    const storedReturnTo = sessionStorage.getItem('return_to');
+                    
+                    // Приоритет: ответ сервера > URL > sessionStorage
+                    const finalOAuthFlow = oauthFlowFromResponse || oauthFlowFromUrl || storedOAuthFlow;
+                    const finalReturnTo = returnToFromResponse || returnToFromUrl || storedReturnTo;
+                    
+                    if (finalOAuthFlow && (finalReturnTo === '/oauth/authorize' || finalReturnTo === '/api/oauth/authorize')) {
+                        console.log('🔄 OAuth flow detected after GitHub login, redirecting to /api/oauth/authorize');
+                        console.log('🔄 OAuth params:', { 
+                            fromResponse: { oauthFlow: oauthFlowFromResponse, returnTo: returnToFromResponse },
+                            fromUrl: { oauthFlow: oauthFlowFromUrl, returnTo: returnToFromUrl },
+                            fromStorage: { oauthFlow: storedOAuthFlow, returnTo: storedReturnTo },
+                            final: { oauthFlow: finalOAuthFlow, returnTo: finalReturnTo }
+                        });
+                        
+                        // Сохраняем токен в cookie для /oauth/authorize (аналогично Telegram)
+                        const isSecure = window.location.protocol === 'https:';
+                        const cookieOptions = [
+                            `temp_access_token=${data.accessToken}`,
+                            'path=/',
+                            'max-age=60',
+                            'SameSite=None'
+                        ];
+                        if (isSecure) {
+                            cookieOptions.push('Secure');
+                        }
+                        document.cookie = cookieOptions.join('; ');
+                        
+                        // ✅ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Восстанавливаем все параметры OAuth из URL, cookies и sessionStorage (в таком порядке приоритета)
+                        // 1. Сначала проверяем URL параметры (самый приоритетный источник)
+                        const urlClientId = urlParams.get('client_id') || data.clientId;
+                        const urlRedirectUri = urlParams.get('redirect_uri') || data.redirectUri;
+                        const urlResponseType = urlParams.get('response_type');
+                        const urlScope = urlParams.get('scope');
+                        const urlState = urlParams.get('state');
+                        
+                        // 2. Затем проверяем cookies (если нет в URL)
+                        const getCookie = (name) => {
+                            const cookies = document.cookie.split(';');
+                            const cookie = cookies.find(c => c.trim().startsWith(name + '='));
+                            return cookie ? cookie.split('=')[1] : null;
+                        };
+                        const cookieClientId = getCookie('oauth_client_id');
+                        const cookieRedirectUri = getCookie('oauth_redirect_uri');
+                        const cookieResponseType = getCookie('oauth_response_type');
+                        const cookieScope = getCookie('oauth_scope');
+                        const cookieState = getCookie('oauth_state_param');
+                        
+                        // 3. И наконец проверяем sessionStorage (если нет ни в URL, ни в cookies)
+                        const savedClientId = urlClientId || cookieClientId || sessionStorage.getItem('oauth_client_id');
+                        const savedRedirectUri = urlRedirectUri || cookieRedirectUri || sessionStorage.getItem('oauth_redirect_uri');
+                        const savedResponseType = urlResponseType || cookieResponseType || sessionStorage.getItem('oauth_response_type') || 'code';
+                        const savedScope = urlScope || cookieScope || sessionStorage.getItem('oauth_scope');
+                        const savedState = urlState || cookieState || sessionStorage.getItem('oauth_state_param');
+                        
+                        console.log('🔄 [GitHub] Restored OAuth params:', {
+                            url: { client_id: urlClientId, redirect_uri: urlRedirectUri },
+                            cookies: { client_id: cookieClientId, redirect_uri: cookieRedirectUri },
+                            sessionStorage: { client_id: sessionStorage.getItem('oauth_client_id'), redirect_uri: sessionStorage.getItem('oauth_redirect_uri') },
+                            final: {
+                                client_id: savedClientId,
+                                redirect_uri: savedRedirectUri,
+                                response_type: savedResponseType,
+                                scope: savedScope,
+                                state: savedState
+                            }
+                        });
+                        
+                        // ✅ ВАЛИДАЦИЯ: Проверяем, что все обязательные параметры присутствуют
+                        if (!savedClientId || !savedRedirectUri) {
+                            console.error('❌ [GitHub] Missing required OAuth parameters!', {
+                                client_id: savedClientId,
+                                redirect_uri: savedRedirectUri
+                            });
+                            alert('Ошибка: отсутствуют обязательные параметры OAuth. Пожалуйста, начните авторизацию заново.');
+                            window.location.href = '/index.html';
+                            return;
+                        }
+                        
+                        // Собираем параметры для URL
+                        const oauthParams = new URLSearchParams();
+                        if (savedClientId) {
+                            oauthParams.set('client_id', savedClientId);
+                        }
+                        if (savedRedirectUri) {
+                            oauthParams.set('redirect_uri', savedRedirectUri);
+                        }
+                        if (savedResponseType) {
+                            oauthParams.set('response_type', savedResponseType);
+                        }
+                        if (savedScope) {
+                            oauthParams.set('scope', savedScope);
+                        }
+                        if (savedState) {
+                            oauthParams.set('state', savedState);
+                        }
+                        
+                        // Редиректим на /api/oauth/authorize для продолжения OAuth flow с параметрами
+                        const apiBaseUrl = API_BASE.replace('/api', '') || 'https://loginus.startapus.com';
+                        const redirectUrl = `${apiBaseUrl}/api/oauth/authorize${oauthParams.toString() ? '?' + oauthParams.toString() : ''}`;
+                        console.log('🔄 [GitHub] Redirecting to:', redirectUrl);
+                        window.location.href = redirectUrl;
+                        return;
+                    }
+                    
+                    // Обычный flow - редиректим на dashboard
+                    console.log('✅ GitHub login successful, redirecting to dashboard');
+                    window.location.href = '/dashboard.html';
+                } else {
+                    console.error('❌ No accessToken in response');
+                    alert('Ошибка: не получен токен доступа');
+                    window.location.href = '/index.html';
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error processing GitHub callback:', error);
+                alert('Ошибка обработки ответа от GitHub: ' + error.message);
+                window.location.href = '/index.html';
+            });
         } else if (forceLogin) {
             // Автоматически запускаем вход с forceLogin, если параметр установлен
             console.log('🔄 Auto-starting GitHub login with forceLogin=true...');

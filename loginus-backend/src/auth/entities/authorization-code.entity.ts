@@ -31,7 +31,7 @@ export class AuthorizationCode {
   @Column({ type: 'text', array: true, default: '{}' })
   scopes: string[];
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'text', nullable: true })
   state: string;
 
   @Column({ type: 'timestamp' })

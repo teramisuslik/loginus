@@ -4022,28 +4022,15 @@
             loading.classList.remove('hidden');
 
             try {
-                console.log('🔍 [handleBindEmail] Sending bind request for email:', email);
-                const result = await apiCall('/api/auth/multi/bind', {
+                await apiCall('/api/auth/multi/bind', {
                     method: 'POST',
                     body: JSON.stringify({ authMethod: 'EMAIL', identifier: email, password })
                 });
-                console.log('✅ [handleBindEmail] Bind result:', result);
-                
-                if (result && result.success === false) {
-                    showNotification('Ошибка привязки: ' + (result.error || 'Неизвестная ошибка'), 'error');
-                    return;
-                }
-                
-                showNotification(result?.message || 'Email привязан', 'success');
+                showNotification('Email привязан', 'success');
                 closeBindEmailModal();
-                
-                // Перезагружаем настройки с небольшой задержкой, чтобы БД обновилась
-                setTimeout(async () => {
-                    await loadSettings();
-                }, 500);
+                await loadSettings();
             } catch (e) {
-                console.error('❌ [handleBindEmail] Error:', e);
-                showNotification('Ошибка привязки: ' + (e.message || 'Неизвестная ошибка'), 'error');
+                showNotification('Ошибка привязки: ' + e.message, 'error');
             } finally {
                 btn.disabled = false;
                 btnText.classList.remove('hidden');

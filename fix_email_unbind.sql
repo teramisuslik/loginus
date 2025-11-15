@@ -58,3 +58,4 @@ FROM "user"
 WHERE id = 'USER_ID_HERE';  -- ⚠️ ЗАМЕНИТЕ НА РЕАЛЬНЫЙ ID
 
 
+
